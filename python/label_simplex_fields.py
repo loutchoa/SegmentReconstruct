@@ -29,7 +29,7 @@ __author__ = "François Lauze"
 
 
 
-def label_to_simplex_field(u):
+def label_to_simplex_field(u, dtype='float32'):
     """
     Convert a integer valued label field into a simplex valued field.
     :param u: ndarray int
@@ -39,19 +39,9 @@ def label_to_simplex_field(u):
         output field, dimemnsion (dim, K) 
     """
     
-    ushape = u.shape
-    u.shape = u.size
     K = u.max() + 1
-    v = np.zeros(u.shape + (K,), dtype='float32')
-    
-    id_K = np.eye(K)
-    for k in range(K):
-        idx = np.where(u == k)
-        v[idx] = id_K[k]
-        
-    u.shape = ushape
-    v.shape = ushape + (K,)
-    return v
+    idK = np.eye(K, dtype=dtype)
+    return idK[u]
 
 
 
@@ -64,16 +54,7 @@ def simplex_to_label_field(v):
         output field, of dimensions basedim, with values in {0..K-1}
     """
     
-    basedim = v.shape[:-1]
-    K = v.shape[-1]
-    
-    lbasedim = reduce(mul, basedim, 1)
-    v.shape = (lbasedim, K)
-    u = np.argmax(v, axis=1)
-    v.shape = basedim + (K,)
-    u.shape = basedim
-    return u
-
+    return np.argmax(v, axis=-1)
 
     
 
