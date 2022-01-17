@@ -15,15 +15,15 @@ the entire image, and this simplifies somewhat the algebra.
 Created on Mon Jan 17 19:07:41 2022
 
 """
-
+from random import shuffle
 import numpy as np
-import  matplotlib.pyplot as plt
+#import  matplotlib.pyplot as plt
 from fistaTV import fistaTV
 from tomo_utils import clean_projection_system, normalise_projection_system
+from graddiv import grad2, grad3
 
 __version__ = "0.0.1"
 __author__ = "François Lauze"
-
 
 
 # Francois: a rewriting, to see whether with my ops I could compare and
@@ -44,7 +44,7 @@ def Row_Action_Reconstruction_F(A, b, d,
     """
     Run an iterative proximal for the reconstruction part.
     
-    Modified Damped-ART with termwise reaction to segmentation part 
+    Modified Damped-ART with term-wise reaction to segmentation part
     and regularisation and box-projection. 
 
     Parameters
@@ -77,7 +77,7 @@ def Row_Action_Reconstruction_F(A, b, d,
     xmax : float, optional
         max value of a pixel. The default is float("inf").
     conv_thresh : float, optional
-        convergence threshold for the reconstructiuon. The default is 1e-3.
+        convergence threshold for the reconstruction. The default is 1e-3.
     normalise : bool, optional.
         if True, the system is normalised to have norm one matrix rows.
     Returns
@@ -118,7 +118,7 @@ def Row_Action_Reconstruction_F(A, b, d,
     x = x0.copy()
     f = [objective(x)]
     
-    # number of rows of A, i.e., obeservations
+    # number of rows of A, i.e., observations
     M = A.shape[0]
     # the M + 1 because the reconstruction functional is composed of a sum
     # of M + 1 functions: one per matrix row and the spatial regularisation.
@@ -133,12 +133,12 @@ def Row_Action_Reconstruction_F(A, b, d,
         # the time/gradient step length at this sweep/scan of the rows
         tau_k = t/(k+1)**a
         # c_k is the sum of weights in mixing segmentation image and reconstruction, 
-        # segmention image d: weight gamma, current reconstruction x: weight 1/c_k
+        # segmentation image d: weight gamma, current reconstruction x: weight 1/c_k
         c_k = gamma + (1/tau_k)
     
         # start with the pure reconstruction part, randomise
         # the order of lines of A first
-        # If the rows have been normalised, radnomisation should improve 
+        # If the rows have been normalised, randomisation should improve
         # the convergence, it does for Kaczmarz. And this is probably the case 
         # even without normalisation
         row_indices = list(range(M))
@@ -158,8 +158,7 @@ def Row_Action_Reconstruction_F(A, b, d,
             # non zero indices should be stored in A.indices...
             z = d_k + ((b_i - a_i@d_k)/(a_i@a_i + c_k))*a_i
             x = (1-rho)*x + rho*z
-            Pbox(x)                
-            
+            Pbox(x)
             
         # Then the modified FISTA-TV step with regularisation weight
         # update d_k with the current value of x
