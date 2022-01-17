@@ -83,7 +83,7 @@ def non_zero_rows(A, thres=1e-8):
     mask = np.ones(m, dtype=bool)
     data = A.data
     indptr = A.indptr
-    for i in xrange(m):
+    for i in range(m):
         if (data[indptr[i]:indptr[i+1]]**2).sum() < thres:
             mask[i] = False
     return mask
@@ -112,7 +112,7 @@ def olines_pinv(A):
     m,n = A.shape
     # A*A.T is diagonal
     B = A.T.copy()
-    for i in xrange(n):
+    for i in range(n):
         d = np.sum(np.asarray(A[i,:].todense())**2)
         B[:,i] /= d
     return B
@@ -128,7 +128,7 @@ def ocols_pinv(A):
     m,n = A.shape
     # this time A.T*A is diagonal
     B = A.T.copy()
-    for i in xrange(m):
+    for i in range(m):
         d = np.sum(np.asarray(A[:,i].todense())**2)
         B[i,:] /= d
     return B
@@ -193,7 +193,7 @@ def solve_pinv(A,b, complexity, damping = 0.0):
     m, n = A.shape
     if complexity == 0:
         # A.A^T is diagonal,
-        for i in xrange(m):
+        for i in range(m):
             d = np.sum(np.asarray(A[i,:].todense())**2) + damping
             b[i,:] /= d
         return A.T*b
@@ -204,7 +204,7 @@ def solve_pinv(A,b, complexity, damping = 0.0):
         mnd = np.zeros(m)
         upd = np.zeros(m-1)
 
-        for i in xrange(m-1):
+        for i in range(m-1):
             d = np.sum(np.asarray(A[i, :].todense()) ** 2)
             e = np.sum(np.asarray(A[i, :].todense())*np.asarray(A[i+1, :].todense()))
             lod[i] = e
@@ -285,6 +285,64 @@ def plot_sinogram(s, ax=None, cmap=None, fontsizex=None, fontsizey=None):
     ax.yaxis.set_ticklabels(xlabels, fontsize=fontsizey)
 
 
+# This function should be called on the matrix A once, so as to remove
+# the null rows, i.e. the ones with norm less that a minimal threshold
+# Some of the functions above do kind of the same thing, don't they?
+# Maybe not dealing with b?
+def clean_projection_system(A, b, threshold=1e-6):
+    """
+    Remove the null lines of the csr matrix A and corresponding entries of b.
+    
+    Parameters:
+    ----------
+    A : sparse_csr matrix float(32?)
+        projection matrix, size (m,n)
+    b : numpy array float(32)
+        measurement vector, size m
+    threshold : float, optional.
+        threshold for testing nullity of lin- The default value is 1e-6.
+    Returns:
+    -------
+    A copy of A with null rows removed.
+    """
+    idx = []
+    m, _ = A.shape
+    for i in range(m):
+        start, stop = A.indpt[i], A.indptr[i + 1]
+        if start != stop:
+            line = A.data[start : stop]
+            if np.linalg.norm(line) < threshold:
+                idx.append(i)
+    
+    mask = np.ones(m, dtype=bool)
+    mask[idx] = False
+    return A[mask], b[mask]
+    
+
+# this function would normalise all rows of A to norm 1 and entries of
+# the system second member accordingly. the rows should of course should be
+# nonzero, typically after having run the function above. 
+def normalise_projection_system(A, b):
+    """
+    Normalise the system to unit row norm, in-place.
+
+    Parameters
+    ----------
+    A : sparse_csr matrix float(32?)
+        projection matrix of size (m,n)
+    b : numpy array float(32)
+        measurement vector, size m
+    Returns
+    -------
+    None
+    """
+    m, _ = A.shape
+    for i in range(m):
+        start, stop = A.indpt[i], A.indptr[i + 1]
+        row_norm = np.linalg.norm(A.data[start : stop])
+        A[start : stop] /= row_norm
+        
+        b[i] /= row_norm
 
 
 ##########################################
