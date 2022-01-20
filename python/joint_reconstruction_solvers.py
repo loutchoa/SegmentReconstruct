@@ -36,7 +36,7 @@ __author__ = "François Lauze"
 def Row_Action_Reconstruction_F(A, b, d,
                                 alpha, beta,
                                 x0, rho, t, a,
-                                maxiter = 10000,
+                                maxiter = 1,
                                 fista_iters = 50,
                                 xmin=0.0, xmax = float("inf"),
                                 conv_thresh=1e-3,
@@ -69,7 +69,9 @@ def Row_Action_Reconstruction_F(A, b, d,
         used to build sequence of proximal step lengths with t above:
         tau_k = t/(k+1)**a with k the sweep number
     maxiter : int, optional
-        maximum number of iterations (sweeps). The default is 10000.
+        maximum number of iterations (sweeps). The default is 1 as in a joint reconstruction
+        and segmentation framework, one sweep at a time should be called. However, to react to an
+        existing segmentation, more iterations could be run.
     fista_iters : int, optional
         number of iterations of FISTA_TV. The default is 50.
     xmin : float, optional
