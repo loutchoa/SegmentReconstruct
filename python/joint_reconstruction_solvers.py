@@ -6,10 +6,18 @@
 @filename: joint_reconstruction_solvers.py
     
 @description: a ART with FISTA for a reconstruction part with
-added reaction to segmentation.
-In the first implementation, I assume, as Chrysoula, as the segmentation ROI is
-the entire image, and this simplifies somewhat the algebra.
+added reaction to segmentation. The segmentation proximal steps.
 
+In the first implementation, of the reconstruction part, I assume,
+like Chrysoula, that the segmentation ROI is the entire image, and this
+simplifies somewhat the algebra.
+In the second, remove this assumption, it becomes a slightly more complicated
+with the introduction of a weighted TV minimisation, which is clearly different
+than the usual weighted one!
+
+I also provide a proximal step for the segmentation. The difficulty with it is
+that in case of a ROI, discrete gradient and divergences need to be provided that
+account for the behaviour at boundary.
 
 @author: François Lauze, University of Copenhagen    
 Created on Mon Jan 17 19:07:41 2022
@@ -43,7 +51,7 @@ def Row_Action_Reconstruction_F(A, b, d,
                                 normalise=True):
     """
     Run an iterative proximal for the reconstruction part.
-    
+
     Modified Damped-ART with term-wise reaction to segmentation part
     and regularisation and box-projection. 
 
