@@ -144,28 +144,39 @@ class Standard_step:
         return self.t / (k + 1) ** self.a
 
 
-def solver_smw(a, V, b, d):
+def solver_smw(a, W, b, d):
     """
     Solve (a a.T + V)x = ba + d via Sherman-Morrison-Woodbury formula.
 
+    W is actually V^{V^1} as we only need it.
     ** Why did PyCharm generate this comments format and then stopped??? **
     Args:
         a ((n,1) ndarray): it should be the transpose of a given projection matrix line
-        V ((n) ndarray): diagonal of a diagonal matrix, entries > 0
+        W ((n) ndarray): diagonal of a diagonal matrix, entries > 0
         b (float): measurement
         d (n) ndarray: term coming from segmentation and proximal
     """
-    # rules on sparse matrices are pretty messy!
-    #
-    W = 1. / V
-    d1 = W * d
-    aV = a.multiply(W)
+    # Yet another attempt not to densify !
+    # TODO: Need to check it does not crash but does not produce any sensitive result!
+    Wd = W * d
+    idx = a.indices
+    a_data = a.data.copy()
+
+    Wa = a_data * W[idx]
+    aWd = Wa * d[idx]
+    aWa = a_data * Wa
+
+    t = ((b - aWd) / (1 + aWa)) * Wa
+    Wd[idx] += t
+    return Wd
+
+    # aV = a.multiply(W)
     # num = (b - (a.multiply(d1)).sum())
     # den = (1 + (a @ aV.T)[0,0])
     # sol = d1 + (num / den) * aV
-    sol = d1 + (b - (a.multiply(d1)).sum()) / (1 + (a @ aV.T)[0,0]) * aV
-    sol.shape = sol.size
-    return sol
+    # sol = d1 + (b - (a.multiply(d1)).sum()) / (1 + (a @ aV.T)[0,0]) * aV
+    # sol.shape = sol.size
+    # return sol
 
 class Inf:
     plus = float("inf")

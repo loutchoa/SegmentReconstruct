@@ -163,7 +163,7 @@ def test_solver():
     dp = DisplayImage(x0, dims[1], x_gt=x)
     obj_func = Objective(An, bn, alpha, beta, dims, d)
 
-    damped_art = Damped_ART_TV_Segmentation(An, bn, alpha, beta, d, dims, x0, roi=roi)
+    damped_art = Damped_ART_TV_Segmentation(An, bn, alpha, beta, d, dims, x0, roi=None)# roi)
     damped_art.add_start_callback(dp)
     damped_art.add_start_callback(obj_func)
     damped_art.add_sweep_callback(obj_func)
