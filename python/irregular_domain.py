@@ -201,6 +201,13 @@ class Stencil2D:
         """2D backward differences divergence from 2D field, for convenience."""
         return self.unflatten((self.divergence_from_2D(f)))
 
+    def add_gradient_ascent(self, xi, v, tau):
+        """In-place gradient ascent for Chambolle-Pock type algorithms."""
+        centre, east = self.idx_fx
+        xi[..., 0] += tau * (v[east] - v[centre])
+        centre, north = self.idx_fy
+        xi[..., 1] += tau * (v[north] - v[centre])
+
 
 class Stencil3D:
     def __init__(self, M):
@@ -430,65 +437,4 @@ class Stencil3D:
         return self.unflatten((self.divergence_from_3D(f)))
 
 
-
-
-
-
-
-
-
-
-if __name__ == "__main__":
-    from skimage import data
-    # seed = 243521
-    # np.random.seed(seed)
-
-    m, n = 5, 5
-    M = np.array(
-        [[0, 0, 0, 0, 0],
-         [0, 0, 1, 1, 0],
-         [0, 1, 1, 1, 0],
-         [0, 1, 1, 0, 0],
-         [0, 0, 0, 0 ,0]], dtype=bool
-    )
-    stencil = Stencil2D(M)
-    print("x : ", stencil.x)
-    print("y : ", stencil.y)
-
-    f1 = np.random.randint(-5, 6, size=(m, n))
-    f2 = np.random.randint(-5, 6, size=(m, n, 2))
-
-
-    print(f"M = \n{M.astype(int)}")
-    print(f"f1 = \n{f1*M}")
-    print(f"f2[:, :, 0] = \n{f2[...,0]*M},\nf2[:, :, 1] = {f2[..., 1]*M}")
-    Grad_f1 = stencil.gradient_2D(f1)
-    Div_f2 = stencil.divergence_2D(f2)
-    print(f"Grad_f1[:, :, 0] = \n{Grad_f1[..., 0]},\nGrad_f1[:, :, 1] = \n{Grad_f1[..., 1] * M}")
-    print(f"Div_f2 = \n{Div_f2}")
-
-    f_f1 = stencil.flatten(f1)
-    f_f2 = stencil.flatten(f2)
-    grad_f1 = stencil.flatten(Grad_f1)
-    div_f2 = stencil.flatten(Div_f2)
-
-    print("<df1, f2>  = ", (grad_f1 * f_f2).sum())
-    print("<f1, divf2>  = ", (f_f1 * div_f2).sum())
-
-    f = data.camera().astype(float)
-    m, n = f.shape
-    x, y = np.mgrid[-1:1:m * 1j, -1:1:n * 1j]
-    M = x ** 2 + y ** 2 < 0.5
-    stencil = Stencil2D(M)
-    df = stencil.gradient_from_2D(f)
-    Df = stencil.unflatten(df)
-    lapf = stencil.divergence_flattened(df)
-    Lapf = stencil.unflatten(lapf)
-
-    gradient_figure, (axf, axfx, axfy, axlapf) = plt.subplots(1, 4, sharex=True, sharey=True)
-    axf.imshow(f)
-    axfx.imshow(Df[:, :, 0])
-    axfy.imshow(Df[:, :, 1])
-    axlapf.imshow(Lapf)
-
-    plt.show()
+i

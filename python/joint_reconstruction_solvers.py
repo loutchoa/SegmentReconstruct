@@ -24,8 +24,11 @@ Created on Mon Jan 17 19:07:41 2022
 
 """
 from random import shuffle
+
+import matplotlib.pyplot as plt
+import numpy
 import numpy as np
-#import  matplotlib.pyplot as plt
+# import  matplotlib.pyplot as plt
 from fistaTV import fistaTV, fistaTV_weighted
 from tomo_utils import clean_projection_system, normalise_projection_system
 from graddiv import grad2, grad3
@@ -34,365 +37,403 @@ __version__ = "0.0.1"
 __author__ = "François Lauze"
 
 
-# Francois: a rewriting, to see whether with my ops I could compare and
-# find the bug... 
-# I will assume that k-means or whatever part of segmentation has been run,
-# and I only need d := E_v(c) and that, as above, the ROI is the whole image so 
-# Pi is the identity. This simplifies the algebra! In particular, one can go
-# with the "magic lemma" directly, Lemma 1.3.1 of my notes
-# Maybe the long list of parameters should be provided in a class?
-def Row_Action_Reconstruction_F(A, b, d,
-                                alpha, beta,
-                                x0, rho, t, a,
-                                maxiter = 1,
-                                fista_iters = 50,
-                                xmin=0.0, xmax = float("inf"),
-                                conv_thresh=1e-3,
-                                normalise=True):
-    """
-    Run an iterative proximal for the reconstruction part.
+# With ideas from "kaczmarz algorithms" GitHub repos
+class Kaczmarz:
+    def __init__(self, A, b, rho=1.0, x0=None, max_iterations=100, tolerance=1e-6,
+                 callback_start=None, callback_sweep=None, callback_end=None):
+        """Kaczmarz row-action method solvers (as opposed to block-row).
 
-    Modified Damped-ART with term-wise reaction to segmentation part
-    and regularisation and box-projection. 
+        Proposes two strategies: cyclic and random row sweep.
 
-    Parameters
-    ----------
-    A : csr matrix of float (or float32)
-        projection matrix, assumed to have no zero lines.
-    b : numpy array float(32)
-        measurements / sinogram stuff. 2D or 3D array.
-    d : numpy array float(32):
-        the segmentation image (i.e. E_v(c)).
-    alpha : float
-        TV regularisation weight.
-    beta : float
-        double weight of segmentation term
-    x0 :  numpy array of float (or float32)
-            Initial reconstruction value.
-    rho : float
-        relaxation parameter, should be in [0, 2]
-    t : float
-        used to build the sequence of proximal step lengths with a below.
-    a : float
-        used to build sequence of proximal step lengths with t above:
-        tau_k = t/(k+1)**a with k the sweep number
-    maxiter : int, optional
-        maximum number of iterations (sweeps). The default is 1 as in a joint reconstruction
-        and segmentation framework, one sweep at a time should be called. However, to react to an
-        existing segmentation, more iterations could be run.
-    fista_iters : int, optional
-        number of iterations of FISTA_TV. The default is 50.
-    xmin : float, optional
-        min value of a pixel. The default is 0.0.
-    xmax : float, optional
-        max value of a pixel. The default is float("inf").
-    conv_thresh : float, optional
-        convergence threshold for the reconstruction. The default is 1e-3.
-    normalise : bool, optional.
-        if True, the system is normalised to have norm one matrix rows.
-    Returns
-    -------
-    x : reconstruction
-    f : list of objective values
-    iter: number of iterations (full sweeps) performed
-    """
-    # shortcut
-    pinf = float("Inf")
-    minf = -pinf
+        Parameters:
+        -----------
+        A : csr matrix float or float32
+            system / projection matrix of size (M, N)
+        b : numpy float/float32 array
+            system second member, size M
+        rho : float, optional.
+            relaxation parameter. It must be in (0,2). The default is 1.0
+        x0 : numpy float/float32 array, optional
+            solution guess, size N. The default is None, means null solution.
+        max_iterations: int, optional.
+            maximum number of iterations. The default is 100
+        tolerance: float, optional
+            convergence threshold. The default is 1e-6.
+        callback_start: function(x)->None, optional.
+            if not none, called before iterations start.
+        callback_sweep: function(x)->None, optional.
+            if not none, called at end of each sweep.
+        callback_end: function(x)->None, optional.
+            if not none, called before returning.
+        """
+        self.A = A
+        self.M, self.N = A.shape
+        self.b = b
+        self.rho = rho
+        if x0 is not None:
+            self.x0 = x0
+        else:
+            self.x0 = np.zeros(self.N, dtype=A.dtype)
+        self.xk = self.x0.copy()
 
-    # measurement and estimates are 2D or 3D images.
-    # the solver need vectorised forms
-    bshape = b.shape
-    xshape = x0.shape
+        self.max_iterations = max_iterations
+        self.tolerance = tolerance
+        self.cb_start = callback_start
+        self.cb_sweep = callback_sweep
+        self.cb_end = callback_end
+        self._method = 'randomised'
+        self.rows = None
 
-    D = grad2 if b.ndim == 2 else grad3
-    b.shape = b.size
-    x0.shape = x0.size
+    def start_callback(self):
+        """Called when solve() start."""
+        if self.cb_start is not None:
+            self.cb_start(self.xk)
 
-    # Normalise the system? I guess always, but not sure at that point?
-    # I could assume that null rows and corresponding measurements have 
-    # been removed?
-    if normalise:
-        An, bn = clean_projection_system(A, b)
-        normalise_projection_system(An, bn)
-    else:
-        An = A
-        bn = b
-        
-    def objective(x):
-        return 0.5*((An@x - bn)**2).sum()\
-            + (beta/2)*((x-d)**2).sum() \
-            + alpha*np.abs(D(x)).sum()
-        
-    def Pbox(x) : 
-        if xmin > minf:
-            np.place(x < xmin, xmin)
-        if xmax < pinf:
-            np.place(x > xmax, xmax)
-    
-    x = x0.copy()
-    f = [objective(x)]
-    
-    # number of rows of A, i.e., observations
-    M = A.shape[0]
-    # the M + 1 because the reconstruction functional is composed of a sum
-    # of M + 1 functions: one per matrix row and the spatial regularisation.
-    # the box constraint is applied to each proximal computation if necessary.
-    gamma = beta/(M+1)
-    
-    for k in range(maxiter):
-        # for convergence
-        previous_x = x.copy()
-        
-        # some preparation:
-        # the time/gradient step length at this sweep/scan of the rows
-        tau_k = t/(k+1)**a
-        # c_k is the sum of weights in mixing segmentation image and reconstruction, 
-        # segmentation image d: weight gamma, current reconstruction x: weight 1/c_k
-        c_k = gamma + (1/tau_k)
-    
-        # start with the pure reconstruction part, randomise
-        # the order of lines of A first
-        # If the rows have been normalised, randomisation should improve the convergence,
-        # it does provably for Kaczmarz. And this is probably the case even without normalisation.
-        row_indices = list(range(M))
-        shuffle(row_indices)
-        
-        for i in row_indices:
-            # d_k is the weighted term from segmentation reaction d with weigh
-            # gamma and the previous value of x with weight 1/tau_k ,
-            # divided by c_k -- see the computation for the proximals. Still,
-            # it means that d_k is a convex combination of d and x
-            d_k = (gamma*d + (1/tau_k)*x)/c_k
-            a_i = A[i]
-            b_i = b[i]
-            
-            # some work could be done to only look at the modified 
-            # pixel values, i.e. those in support(a_i). Actually, the list of
-            # non zero indices should be stored in A.indices...
-            z = d_k + ((b_i - a_i@d_k)/(a_i@a_i + c_k))*a_i
-            x = (1-rho)*x + rho*z
-            Pbox(x)
-            
-        # Then the modified FISTA-TV step with regularisation weight
-        # update d_k with the current value of x
-        d_k = (gamma*d + (1/tau_k)*x)/c_k
-        # FISTA-TV weight
-        l = 2*alpha/c_k
-        # Should I apply or not apply box constraint conditions in FISTA-TV
-        # I ignore them so as to follow Andersen-Hansen 2014.
-        # fista_TV (and its weighted version) need 2D or 3D objects, I need
-        # to temporarily restore the shapes of the objects before flattening the result
-        d_k.shape = xshape
-        z = fistaTV(d_k, l, fista_iters, minf, pinf)
-        z.shape = z.size
-        # d_k will be recomputed in the next iteration, so no need to re-flatten it
-        x = (1-rho)*x + rho*z
-        Pbox(x)
-        
-        # I could have instead computed
-        # x = fistaTV(d_k_norm, l, fista_iters, xmin, xmax)
-        # and ignored the Pbox(x) which would be unnecessary..
-        f.append(objective(x))
-        
-        if np.linalg.norm(x - previous_x) < conv_thresh:
-            break
+    def sweep_callback(self):
+        """Called at end of each sweep."""
+        if self.cb_sweep is not None:
+            self.cb_sweep(self.xk)
 
-    # restore teh shapes of b and x
-    b.shape = bshape
-    x.shape = xshape
-    return x, f, k
+    def end_callback(self):
+        """Called when solve() is about to return."""
+        if self.cb_end is not None:
+            self.cb_end(self.xk)
+
+    @property
+    def strategy(self):
+        return self._method
+
+    @strategy.setter
+    def strategy(self, method):
+        if method in ('randomised', 'cyclic'):
+            self._method = method
+        else:
+            raise ValueError(f'in strategy(), method must be "randomised" or "cyclic". Got f{method}')
+
+    def sweep_order(self):
+        self.rows = list(range(self.M))
+        if self._method == 'randomised':
+            shuffle(self.rows)
+
+    def solve(self):
+        """
+        Runs the actual solver.
+        """
+        size = self.M * self.N
+        self.start_callback()
+
+        for k in range(self.max_iterations):
+            self.sweep_order()
+            for i in self.rows:
+                ai = self.A[i]
+                bi = self.b[i]
+                self.xk += self.rho * (bi - ai @ self.xk) * ai
+            self.sweep_callback()
+        self.end_callback()
+
+
+class Standard_step:
+    def __init__(self, t=0.1, a=1.0):
+        """
+        Standard time step: t / (k + 1)**a.
+        """
+        self.t = t
+        self.a = a
+
+    def __call__(self, k):
+        return self.t / (k + 1) ** self.a
 
 
 def solver_smw(a, V, b, d):
     """
     Solve (a a.T + V)x = ba + d via Sherman-Morrison-Woodbury formula.
 
+    ** Why did PyCharm generate this comments format and then stopped??? **
     Args:
-        a ((n,1) ndarray): should be transpose of a given projection matrix line
+        a ((n,1) ndarray): it should be the transpose of a given projection matrix line
         V ((n) ndarray): diagonal of a diagonal matrix, entries > 0
         b (float): measurement
         d (n) ndarray: term coming from segmentation and proximal
     """
+    # rules on sparse matrices are pretty messy!
+    #
     W = 1. / V
     d1 = W * d
-    aV = W * a
-    return d1 + (b - a @ d1) / (1 + a @ aV) * aV
+    aV = a.multiply(W)
+    # num = (b - (a.multiply(d1)).sum())
+    # den = (1 + (a @ aV.T)[0,0])
+    # sol = d1 + (num / den) * aV
+    sol = d1 + (b - (a.multiply(d1)).sum()) / (1 + (a @ aV.T)[0,0]) * aV
+    sol.shape = sol.size
+    return sol
+
+class Inf:
+    plus = float("inf")
+    minus = -float("inf")
 
 
-def Row_Action_Reconstruction_with_ROI(
-        A, b, d,
-        alpha, beta,
-        mask,
-        x0, rho, t, a,
-        maxiter=1,
-        fista_iters=50,
-        xmin=0.0, xmax=float("inf"),
-        conv_thresh=1e-3,
-        normalise=True):
-    """
-    Run an iterative proximal for the reconstruction part including a segmentation ROI.
+class Damped_ART_TV_Segmentation:
+    def __init__(self, A, b, alpha, beta, d, dims, x0, rho=1.0, roi=None):
+        """Damped ART with regularisation and reaction to segmentation.
 
-    Modified Damped-ART with term-wise reaction to segmentation part
-    and regularisation and box-projection, this time with segmentation ROI.
-    The ROI is given as a binary mask, which should have the shape of the domain/volume
-    to be reconstructed.
+        This class configures and runs the reconstruction in the joint
+        algorithm.
+        The system (A, b) is assumed to have been normalised: no null row
+        in A, each row has norm 1, and b is normalised accordingly-
 
-    Parameters
-    ----------
-    A : csr matrix of float (or float32)
-        projection matrix, assumed to have no zero lines.
-    b : numpy array float(32)
-        measurements / sinogram stuff. 2D or 3D array.
-    d : numpy array float(32):
-        the segmentation image (i.e. E_v(c)). I assume that it has the same size as x0, the indices
-        out ot the ROI are simply ignored.
-        TODO? if the ROI is small enough, that would be a waste of space, another representation?
-    alpha : float
-        TV regularisation weight.
-    beta : float
-        double weight of segmentation term
-    mask: numpy array of float (or float32)
-        mask for the segmentation ROI. Applying Pi^T Pi from the notes is just point-wise
-        multiplication with the mask image.
-    x0 :  numpy array of float (or float32)
-            Initial reconstruction value.
-    rho : float
-        relaxation parameter, should be in [0, 2]
-    t : float
-        used to build the sequence of proximal step lengths with a below.
-    a : float
-        used to build sequence of proximal step lengths with t above:
-        tau_k = t/(k+1)**a with k the sweep number
-    maxiter : int, optional
-        maximum number of iterations (sweeps). The default is 1 as in a joint reconstruction
-        and segmentation framework, one sweep at a time should be called. However, to react to an
-        existing segmentation, more iterations could be run.
-    fista_iters : int, optional
-        number of iterations of FISTA_TV. The default is 50.
-    xmin : float, optional
-        min value of a pixel. The default is 0.0.
-    xmax : float, optional
-        max value of a pixel. The default is float("inf").
-    conv_thresh : float, optional
-        convergence threshold for the reconstruction. The default is 1e-3.
-    normalise : bool, optional.
-        if True, the system is normalised to have norm one matrix rows.
-    Returns
-    -------
-    x : reconstruction
-    f : list of objective values
-    iter: number of iterations (full sweeps) performed
-    """
-    # shortcut
-    pinf = float("Inf")
-    minf = -pinf
+        - The maximum number of sweeps i by default 100 and can be changed
+        from the corresponding method.
+        - The number of FISTA-TV iterations is by default 50 and can be changed
+        from the corresponding method.
+        - the box constraints are by default set to [0, +inf]. They can be
+        changed from the corresponding method.
+        - the convergence threshold is set to 1e-3 and can be changed from the
+        corresponding method.
+        - step has the form t / (k + 1)**a where k is the iteration number.
+        Another step strategy can be provided via a step callback method.
 
-    # measurement and estimates are 2D or 3D images.
-    # the solver need vectorised forms
-    bshape = b.shape
-    xshape = x0.shape
-    D = grad2 if b.ndim == 2 else grad3
-    b.shape = b.size
-    x0.shape = x0.size
-    mask.shape = mask.size
+        TODO vectorial values for x would be nice for parallel tomo!
+            I just don't want to add it now, would make debugging more
+            complicated.
 
-    # Normalise the system? I guess always, but not sure at that point?
-    # I could assume that null rows and corresponding measurements have
-    # been removed?
-    if normalise:
-        An, bn = clean_projection_system(A, b)
-        normalise_projection_system(An, bn)
-    else:
-        An = A
-        bn = b
+        Parameters:
+        ----------
+        A : CSR float/float32
+            projection matrix.
+        b : float/float32 numpy array
+            system second member / measurements. Size M with M the number of
+            rows of A.
+        alpha : float
+            TV regularisation weight. If set to zero, regularisation is
+            skipped.
+        beta : float
+            reaction to segmentation weight. If set to zero, segmentation
+            reaction is skipped.
+        d : float/float32 numpy array.
+            segmentation cartoon image. Same size as x0.
+        dims : tuple/list
+            (ndim, shape) pair, where ndim should be 2 or 3 for a planar
+            or volumic data, and shape is the non ravelled shape of x0
+            (and d).
+        x0 : float/float32 numpy array
+            Solution estimate. size N with N the number of columns of A.
+        rho : float, optional
+            relaxation parameter. Should be in [0,1], default is 1.0
+        roi : bool numpy array, optional
+            Length N array representation the characteristic function of the
+            segment ROI. If None, the roi is the entire volume.
+            The default is None.
+        """
+        self.A = A
+        self.b = b
+        self.M, self.N = A.shape
+        self.alpha = alpha
+        self.beta = beta
+        self.dims = dims
+        self.d = d
+        self.dims = dims
+        self.x = x0.copy()
+        self.previous_x = None
+        self.rho = rho
+        self.full_volume = roi is None
+        self.roi = 1.0 if self.full_volume else roi
+        self.regularise = alpha > 0.0
+        self.react = beta > 0
+        self.gamma = self.beta / (self.M + 1)
 
-    def objective(x):
-        return 0.5 * ((An @ x - bn) ** 2).sum() \
-               + (beta / 2) * ((mask*x - d) ** 2).sum() \
-               + alpha * np.abs(D(x)).sum()
+        # solver execution callbacks, can be used to
+        # save or display information during execution.
+        # start callbacks should have signature callback(x) -> None
+        self.start_callbacks = []
+        # sweep callbacks should have signature callback(x, k) -> None
+        self.sweep_callbacks = []
+        # end callbacks should have signature callback(x) -> None
+        self.end_callbacks = []
 
-    def Pbox(x):
-        if xmin > minf:
-            np.place(x < xmin, xmin)
-        if xmax < pinf:
-            np.place(x > xmax, xmax)
+        # step callback: must be callable step(k : int) -> float
+        # by default it is t/(k+1)**a, t = 0.1, a = 1.0
+        self.step = Standard_step()
 
-    x = x0.copy()
-    f = [objective(x)]
+        self._max_iterations = 100
+        self._fista_iterations = 50
+        self._tolerance = 1e-3
+        self._method = 'randomised'
+        self.rows = None
+        self._box = (0.0, float("inf"))
+        self.iteration = -1
 
-    # number of rows of A, i.e., observations
-    M = A.shape[0]
-    # the M + 1 because the reconstruction functional is composed of a sum
-    # of M + 1 functions: one per matrix row and the spatial regularisation.
-    # the box constraint is applied to each proximal computation if necessary.
-    gamma = beta / (M + 1)
+    @property
+    def strategy(self):
+        return self._method
 
-    for k in range(maxiter):
-        # for convergence
-        previous_x = x.copy()
+    @strategy.setter
+    def strategy(self, method):
+        if method in ('randomised', 'cyclic'):
+            self._method = method
+        else:
+            raise ValueError(f'in strategy(), method must be "randomised" or "cyclic". Got f{method}')
 
-        # some preparation:
-        # the time/gradient step length at this sweep/scan of the rows
-        tau_k = t / (k + 1) ** a
-        # c_k is the sum of weights in mixing segmentation image and reconstruction,
-        # segmentation image d: weight gamma, current reconstruction x: weight 1/c_k
-        c_k = gamma + (1 / tau_k)
+    def sweep_order(self):
+        self.rows = list(range(self.M))
+        if self._method == 'randomised':
+            shuffle(self.rows)
 
-        # The diagonal matrix V_k (just V in the notes)
-        V_k = (1 / tau_k) * np.ones_like(x) + gamma * mask
+    @property
+    def max_iterations(self):
+        return self._max_iterations
 
-        # start with the pure reconstruction part, randomise
-        # the order of lines of A first
-        # If the rows have been normalised, randomisation should improve
-        # the convergence, it does for Kaczmarz. And this is probably the case
-        # even without normalisation
-        row_indices = list(range(M))
-        shuffle(row_indices)
+    @max_iterations.setter
+    def max_iterations(self, n):
+        if n < 0:
+            raise ValueError(f"maximum number of iterations must be >= 0.")
+        self._max_iterations = n
 
-        for i in row_indices:
-            # d_k is the weighted term from segmentation reaction d with weigh
-            # gamma and the previous value of x with weight 1/tau_k ,
-            # divided by c_k -- see the computation for the proximals. Still,
-            # it means that d_k is a convex combination of d and x
-            d_k = (gamma * mask * d + (1 / tau_k) * x) / c_k
-            a_i = A[i]
-            b_i = b[i]
+    @property
+    def iterations_fista(self):
+        return self._fista_iterations
 
-            # some work could be done to only look at the modified
-            # pixel values, i.e. those in support(a_i). Actually, the list of
-            # non zero indices should be stored in A.indices...
-            z = solver_smw(a_i, V_k, b_i, d_k)
-            x = (1 - rho) * x + rho * z
-            Pbox(x)
+    @iterations_fista.setter
+    def iterations_fista(self, n):
+        if n < 0:
+            raise ValueError(f"number of fista iterations must be >= 0.")
+        self._fista_iterations = n
 
-        # Then the modified FISTA-TV step with regularisation weight
-        # update d_k with the current value of x
-        d_k = (gamma * mask * d + (1 / tau_k) * x) / c_k
-        # FISTA-TV weight
-        l = 2 * alpha
-        # should I apply or not apply box constraint conditions in FISTA-TV
-        # I ignore them so as to follow Andersen-Hansen 2014.
-        # Again fista_tv_fistaTV_weighted() takes a 2D or 3D input, need to restore the shape
-        W = 1./np.sqrt(V_k)
-        W.shape = xshape
-        d_k.shape = xshape
-        z = fistaTV_weighted(d_k, l, W, fista_iters, omega=tau_k, xmin=minf, xmax=pinf)
-        # flatten the result
-        z.shape = z.size
-        x = (1 - rho) * x + rho * z
-        Pbox(x)
+    @property
+    def box(self):
+        return self._box
 
-        # I could have instead computed
-        # x = fistaTV(d_k_norm, l, fista_iters, xmin, xmax)
-        # and ignored the Pbox(x) which would be unnecessary..
-        f.append(objective(x))
+    @box.setter
+    def box(self, xmin=None, xmax=None):
+        if xmin is None:
+            xmin = self._box[0]
+        if xmax is None:
+            xmax = self._box[1]
+        if xmin >= xmax:
+            raise ValueError(f"the box is reduced to 1 value or empty.")
+        self._box = (xmin, xmax)
 
-        if np.linalg.norm(x - previous_x) < conv_thresh:
-            break
+    def box_project(self):
 
-    b.shape = bshape
-    x.shape = xshape
-    mask.shape = xshape
-    return x, f, k
+        if self._box[0] > Inf.minus:
+            np.place(self.x, self.x < self._box[0], self._box[0])
+        if self._box[1] < Inf.plus:
+            np.place(self.x, self.x > self._box[1], self._box[1])
 
+    def add_start_callback(self, callback):
+        """Add a callback executed at start of the reconstruction part."""
+        self.start_callbacks.append(callback)
+
+    def add_sweep_callback(self, callback):
+        """Add a callback executed at end of a sweep."""
+        self.sweep_callbacks.append(callback)
+
+    def add_end_callback(self, callback):
+        """Add a callback executed at end of the reconstruction part."""
+        self.end_callbacks.append(callback)
+
+    def run_start_callbacks(self):
+        for callback in self.start_callbacks:
+            callback(self.x)
+
+    def run_sweep_callbacks(self):
+        for callback in self.sweep_callbacks:
+            callback(self.x, self.iteration)
+
+    def run_end_callbacks(self):
+        for callback in self.end_callbacks:
+            callback(self.x)
+
+    def step_callback(self, callback):
+        self.step = callback
+
+    @property
+    def tolerance(self):
+        return self._tolerance
+
+    @tolerance.setter
+    def tolerance(self, tol):
+        if tol < 0:
+            self._tolerance = 0.0
+        else:
+            self._tolerance = tol
+
+    def converged(self):
+        """
+        Convergence test.
+
+        This could also be parameterised via a callback,
+        or at least easily changed...
+        """
+        return np.linalg.norm(self.x - self.previous_x) / self.x.size < self._tolerance
+
+    def solve(self):
+        """Runs a sweep of proximals."""
+        self.run_start_callbacks()
+
+        Vk = None  # dummy stuff to remove a PyCharm message
+        Wk = None # idem
+        for self.iteration in range(self._max_iterations):
+            self.previous_x = self.x.copy()
+
+            tauk = self.step(self.iteration)
+            ck = 1 / tauk if not self.react else self.gamma + 1 / tauk
+
+            # The weight matrix for the region of interest, if not the full volume
+            if not self.full_volume:
+                Vk = (1 / tauk) * np.ones_like(self.x) + self.gamma * self.roi
+                Wk = 1.0 / Vk
+
+            # get straight or randomised row order
+            self.sweep_order()
+            for i in self.rows:
+                ai = self.A[i]
+                bi = self.b[i]
+
+                # maybe I should have specific methods?
+                # no reaction toward segmentation:
+                if not self.react:
+                    z = self.x + ((bi - ai @ self.x) / (1 + ck)) * ai
+                else:
+                    dki = (self.gamma * self.roi * self.d + (1 / tauk) * self.x) / ck
+                    if self.full_volume:
+                        z = dki + ((bi - ai @ dki) / (1 + ck)) * ai
+                    else:
+                        try:
+                            z = solver_smw(ai, Vk, bi, dki)
+                            # TODO: modify the Sherman-Woodbury formula to deal with Vk^{-1}
+                            #   directly and rewrite the sparse part! That should be easy!
+                        except:
+                            print("Boooh!!!")
+
+                self.x = (1 - self.rho) * self.x + self.rho * z
+                self.x.shape = self.x.size
+
+            # Done with matrix rows
+
+            # if TV regularisation is needed:
+            if self.regularise:
+                if not self.react:  # no segmentation
+                    self.x.shape = self.dims[1]
+                    z = fistaTV(self.x, 2 * self.alpha * tauk, self._fista_iterations, xmin=Inf.minus)
+                    self.x.shape = self.x.size
+                else:
+                    dki = (self.gamma * self.roi * self.d + (1 / tauk) * self.x) / ck
+                    dki.shape = self.dims[1]
+                    if self.full_volume:
+                        z = fistaTV(dki, 2 * self.alpha / ck, self._fista_iterations, xmin=Inf.minus)
+                    else:  # segmentation with region of interest
+                        Wk.shape = self.dims[1]
+                        z = fistaTV_weighted(dki, 2 * self.alpha, Wk, self._fista_iterations, omega=tauk, xmin=Inf.minus)
+                        Wk.shape = Wk.size
+                z.shape = z.size
+                self.x = (1 - self.rho) * self.x + self.rho * z
+
+            self.run_sweep_callbacks()
+            if self.converged():
+                break
+
+        self.run_end_callbacks()
+
+#
+#
+#

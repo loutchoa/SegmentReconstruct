@@ -13,11 +13,13 @@ Date: September 2015 - July 2016
 
 """
 
-
 import numpy as np
+import scipy.sparse as sp
 import scipy.sparse.linalg as spla
 import matplotlib.pyplot as plt
-#from matplotlib import cm
+
+
+# from matplotlib import cm
 
 
 def cosd(x):
@@ -28,7 +30,7 @@ def cosd(x):
     :return:
         cosine of x
     """
-    return np.cos(np.pi*x/180.0)
+    return np.cos(np.pi * x / 180.0)
 
 
 def sind(x):
@@ -39,7 +41,7 @@ def sind(x):
     :return:
         sine of x
     """
-    return np.sin(np.pi*x/180.0)
+    return np.sin(np.pi * x / 180.0)
 
 
 def delete_rows_csr(A, nz_rows):
@@ -66,10 +68,11 @@ def non_empty_rows(A):
     """
     d = np.diff(A.indptr).astype(int)
     idx = np.where(d == 0)
-    mask = np.ones(A.shape[0], dtype = bool)
+    mask = np.ones(A.shape[0], dtype=bool)
     mask[idx] = False
     return mask
 
+# Consider Removal
 def non_zero_rows(A, thres=1e-8):
     # type: (scipy.sparse.csr_matrix, float) -> numpy.ndarray
     """
@@ -84,7 +87,7 @@ def non_zero_rows(A, thres=1e-8):
     data = A.data
     indptr = A.indptr
     for i in range(m):
-        if (data[indptr[i]:indptr[i+1]]**2).sum() < thres:
+        if (data[indptr[i]:indptr[i + 1]] ** 2).sum() < thres:
             mask[i] = False
     return mask
 
@@ -101,7 +104,6 @@ def remove_empty_rows_from_csr(A):
     return A[mask], mask
 
 
-
 def olines_pinv(A):
     """
     Computes pseudoinverse of a Matrix A (n,m), m > n
@@ -109,12 +111,12 @@ def olines_pinv(A):
     :param A: sparse matrix to be inverted
     :return: pseudo-inverse of A
     """
-    m,n = A.shape
+    m, n = A.shape
     # A*A.T is diagonal
     B = A.T.copy()
     for i in range(n):
-        d = np.sum(np.asarray(A[i,:].todense())**2)
-        B[:,i] /= d
+        d = np.sum(np.asarray(A[i, :].todense()) ** 2)
+        B[:, i] /= d
     return B
 
 
@@ -125,15 +127,13 @@ def ocols_pinv(A):
     :param A: sparse matrix to be inverted
     :return: pseudoinverse of A
     """
-    m,n = A.shape
+    m, n = A.shape
     # this time A.T*A is diagonal
     B = A.T.copy()
     for i in range(m):
-        d = np.sum(np.asarray(A[:,i].todense())**2)
-        B[i,:] /= d
+        d = np.sum(np.asarray(A[:, i].todense()) ** 2)
+        B[i, :] /= d
     return B
-
-
 
 
 def thomas(a, b, c, d):
@@ -157,26 +157,23 @@ def thomas(a, b, c, d):
     c[0] /= b[0]
     d[0] /= b[0]
 
-    for i in range(1,n-1):
-    #    if i == n-1:
-    #       print "bug"
-        beta = b[i] - a[i-1]*c[i-1]
+    for i in range(1, n - 1):
+        #    if i == n-1:
+        #       print "bug"
+        beta = b[i] - a[i - 1] * c[i - 1]
         c[i] /= beta
-        d[i] = (d[i] - a[i-1]*d[i-1])/beta
-    beta = b[-1] - a[-1]*c[-1]
-    d[-1] = (d[-1] - a[-1]*d[-2])/beta
+        d[i] = (d[i] - a[i - 1] * d[i - 1]) / beta
+    beta = b[-1] - a[-1] * c[-1]
+    d[-1] = (d[-1] - a[-1] * d[-2]) / beta
 
     # backward step
-    for i in xrange(n-2,-1,-1):
-        d[i] -= c[i]*d[i+1]
+    for i in range(n - 2, -1, -1):
+        d[i] -= c[i] * d[i + 1]
 
     return d
 
 
-
-
-
-def solve_pinv(A,b, complexity, damping = 0.0):
+def solve_pinv(A, b, complexity, damping=0.0):
     """
     Computes pinv(A)*b assuming that A has independent lines
     and that A.A^T is diagonal (complexity=0), tridiagonal (complexity=1),
@@ -194,35 +191,33 @@ def solve_pinv(A,b, complexity, damping = 0.0):
     if complexity == 0:
         # A.A^T is diagonal,
         for i in range(m):
-            d = np.sum(np.asarray(A[i,:].todense())**2) + damping
-            b[i,:] /= d
-        return A.T*b
+            d = np.sum(np.asarray(A[i, :].todense()) ** 2) + damping
+            b[i, :] /= d
+        return A.T * b
     elif complexity == 1:
         # A.A^T is tridiagonal
         # lower, main and upper diagonals
-        lod = np.zeros(m-1)
+        lod = np.zeros(m - 1)
         mnd = np.zeros(m)
-        upd = np.zeros(m-1)
+        upd = np.zeros(m - 1)
 
-        for i in range(m-1):
+        for i in range(m - 1):
             d = np.sum(np.asarray(A[i, :].todense()) ** 2)
-            e = np.sum(np.asarray(A[i, :].todense())*np.asarray(A[i+1, :].todense()))
+            e = np.sum(np.asarray(A[i, :].todense()) * np.asarray(A[i + 1, :].todense()))
             lod[i] = e
             mnd[i] = d
             upd[i] = e
-        mnd[m-1] = np.sum(np.asarray(A[m-1, :].todense()) ** 2)
+        mnd[m - 1] = np.sum(np.asarray(A[m - 1, :].todense()) ** 2)
         mnd += damping
 
         y = thomas(lod, mnd, upd, b)
-        return A.T*y
+        return A.T * y
     else:
         # generic least-squares solver
         return spla.lsqr(A, b)
 
 
-
-
-def detector_mask(N, d, dn, fg=1.0, bg = 0.5, bool_res=False):
+def detector_mask(N, d, dn, fg=1.0, bg=0.5, bool_res=False):
     """
     Returns a disk map for a NxN image illustrating
     what the detector sees.
@@ -241,14 +236,13 @@ def detector_mask(N, d, dn, fg=1.0, bg = 0.5, bool_res=False):
     :return: disk mask of the region covered by the detector,
     """
     x, y = np.mgrid[0:N, 0:N]
-    r = N*0.5*dn/d
-    c = (N-1.0)/2.0
-    z = (x-c)**2 + (y-c)**2 <= r**2
+    r = N * 0.5 * dn / d
+    c = (N - 1.0) / 2.0
+    z = (x - c) ** 2 + (y - c) ** 2 <= r ** 2
     if not bool_res:
         z = z.astype(float)
-        z = (fg - bg)*z + bg
+        z = (fg - bg) * z + bg
     return z
-
 
 
 def plot_sinogram(s, ax=None, cmap=None, fontsizex=None, fontsizey=None):
@@ -272,17 +266,17 @@ def plot_sinogram(s, ax=None, cmap=None, fontsizex=None, fontsizey=None):
         ax = fig.gca()
 
     dN, lAngles = s.shape
-    #print s.shape
-    r = lAngles/4
-    angleticks = [0, r, 2*r, 3*r, lAngles-1]
-    anglelabels = [r'0',r'$\pi/4$',r'$\pi/2$',r'$3\pi/4$', r'$\pi$']
-    xticks = [0, dN/2, dN-1]
-    xlabels = [str((dN/2)), '0', str(-(dN/2))]
-    ax.imshow(s, aspect=lAngles*1.0/dN, cmap=cmap)
-    ax.xaxis.set_ticks(angleticks)
-    ax.xaxis.set_ticklabels(anglelabels, fontsize=fontsizex)
-    ax.yaxis.set_ticks(xticks)
-    ax.yaxis.set_ticklabels(xlabels, fontsize=fontsizey)
+    # print s.shape
+    r = lAngles / 4
+    angle_ticks = [0, r, 2 * r, 3 * r, lAngles - 1]
+    angle_labels = [r'0', r'$\pi/4$', r'$\pi/2$', r'$3\pi/4$', r'$\pi$']
+    x_ticks = [0, dN / 2, dN - 1]
+    x_labels = [str((dN / 2)), '0', str(-(dN / 2))]
+    ax.imshow(s, aspect=lAngles * 1.0 / dN, cmap=cmap)
+    ax.xaxis.set_ticks(angle_ticks)
+    ax.xaxis.set_ticklabels(angle_labels, fontsize=fontsizex)
+    ax.yaxis.set_ticks(x_ticks)
+    ax.yaxis.set_ticklabels(x_labels, fontsize=fontsizey)
 
 
 # This function should be called on the matrix A once, so as to remove
@@ -308,16 +302,18 @@ def clean_projection_system(A, b, threshold=1e-6):
     idx = []
     m, _ = A.shape
     for i in range(m):
-        start, stop = A.indpt[i], A.indptr[i + 1]
+        start, stop = A.indptr[i], A.indptr[i + 1]
         if start != stop:
-            line = A.data[start : stop]
+            line = A.data[start: stop]
             if np.linalg.norm(line) < threshold:
                 idx.append(i)
-    
+        else:
+            idx.append(i) # the line is empty!
+
     mask = np.ones(m, dtype=bool)
     mask[idx] = False
     return A[mask], b[mask]
-    
+
 
 # this function would normalise all rows of A to norm 1 and entries of
 # the system second member accordingly. the rows should of course should be
@@ -334,15 +330,21 @@ def normalise_projection_system(A, b):
         measurement vector, size m
     Returns
     -------
-    None
+    An : row-normalised system matrix
+    bn : normalised second member
     """
-    m, _ = A.shape
-    for i in range(m):
-        start, stop = A.indpt[i], A.indptr[i + 1]
-        row_norm = np.linalg.norm(A.data[start : stop])
-        A[start : stop] /= row_norm
-        
-        b[i] /= row_norm
+    row_norms = spla.norm(A, axis=1)
+    An = sp.diags(1. / row_norms) @ A
+    Bn = b / row_norms
+    return An, Bn
+
+
+def reduce_and_normalise_system(A, b, threshold=1e-6):
+    """
+    Reduce by removing null rows and normalising non-zero rows to norm 1.
+    """
+    Ac, bc = clean_projection_system(A, b, threshold=threshold)
+    return normalise_projection_system(Ac, bc)
 
 
 ##########################################
@@ -358,16 +360,16 @@ def Shepp_Logan(n):
     """
     #       A      a      b    x0      y0    phi
     #    --------------------------------------
-    e = [[  1,   .69,   .92,    0,      0,   0],
-         [-.8, .6624, .8740,    0, -.0184,   0],
-         [-.2, .1100, .3100,  .22,      0, -18],
-         [-.2, .1600, .4100, -.22,      0,  18],
-         [ .1, .2100, .2500,    0,    .35,   0],
-         [ .1, .0460, .0460,    0,     .1,   0],
-         [ .1, .0460, .0460,    0,    -.1,   0],
-         [ .1, .0460, .0230, -.08,  -.605,   0],
-         [ .1, .0230, .0230,    0,  -.606,   0],
-         [ .1, .0230, .0460,  .06,  -.605,   0]]
+    e = [[1, .69, .92, 0, 0, 0],
+         [-.8, .6624, .8740, 0, -.0184, 0],
+         [-.2, .1100, .3100, .22, 0, -18],
+         [-.2, .1600, .4100, -.22, 0, 18],
+         [.1, .2100, .2500, 0, .35, 0],
+         [.1, .0460, .0460, 0, .1, 0],
+         [.1, .0460, .0460, 0, -.1, 0],
+         [.1, .0460, .0230, -.08, -.605, 0],
+         [.1, .0230, .0230, 0, -.606, 0],
+         [.1, .0230, .0460, .06, -.605, 0]]
     e = np.array(e)
     xn = np.linspace(-1.0, 1.0, num=n)
     Xn = np.tile(xn, (n, 1))
@@ -375,22 +377,19 @@ def Shepp_Logan(n):
     X = np.zeros((n, n))
 
     for i in range(e.shape[0]):
-        A, a2, b2, x0, y0, phi = e[i,:]
+        A, a2, b2, x0, y0, phi = e[i, :]
         a2 *= a2
         b2 *= b2
         x = Xn - x0
         y = Yn - y0
-        idx = np.where(((x*cosd(phi) + y*sind(phi))**2)/a2 + ((y*cosd(phi) - x*sind(phi))**2)/b2 <= 1)
+        idx = np.where(((x * cosd(phi) + y * sind(phi)) ** 2) / a2 + ((y * cosd(phi) - x * sind(phi)) ** 2) / b2 <= 1)
         X[idx] += X[idx] + A
 
     np.place(X, X < 0.0, 0.0)
     return X
 
 
-
-
 if __name__ == "__main__":
-    import matplotlib.pyplot as plt
     X = Shepp_Logan(400)
     plt.imshow(X)
     plt.show()
