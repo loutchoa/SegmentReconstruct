@@ -38,6 +38,7 @@ __author__ = "François Lauze"
 
 
 # With ideas from "kaczmarz algorithms" GitHub repos
+# Put max_iterations and tolerance out of init?
 class Kaczmarz:
     def __init__(self, A, b, rho=1.0, x0=None, max_iterations=100, tolerance=1e-6,
                  callback_start=None, callback_sweep=None, callback_end=None):
@@ -146,10 +147,8 @@ class Standard_step:
 
 def solver_smw(a, W, b, d):
     """
-    Solve (a a.T + V)x = ba + d via Sherman-Morrison-Woodbury formula.
+    Solve (a a.T + W^{-1})x = ba + d via Sherman-Morrison-Woodbury formula.
 
-    W is actually V^{V^1} as we only need it.
-    ** Why did PyCharm generate this comments format and then stopped??? **
     Args:
         a ((n,1) ndarray): it should be the transpose of a given projection matrix line
         W ((n) ndarray): diagonal of a diagonal matrix, entries > 0
@@ -157,26 +156,14 @@ def solver_smw(a, W, b, d):
         d (n) ndarray: term coming from segmentation and proximal
     """
     # Yet another attempt not to densify !
-    # TODO: Need to check it does not crash but does not produce any sensitive result!
-    Wd = W * d
+    ad = a.data
     idx = a.indices
-    a_data = a.data.copy()
-
-    Wa = a_data * W[idx]
-    aWd = Wa * d[idx]
-    aWa = a_data * Wa
-
-    t = ((b - aWd) / (1 + aWa)) * Wa
-    Wd[idx] += t
+    Wd = W*d
+    Wa = W[idx] * ad
+    L = ((b - ad @ Wd[idx]) / (1 + ad @ Wa)) * Wa
+    Wd[idx] += L
     return Wd
 
-    # aV = a.multiply(W)
-    # num = (b - (a.multiply(d1)).sum())
-    # den = (1 + (a @ aV.T)[0,0])
-    # sol = d1 + (num / den) * aV
-    # sol = d1 + (b - (a.multiply(d1)).sum()) / (1 + (a @ aV.T)[0,0]) * aV
-    # sol.shape = sol.size
-    # return sol
 
 class Inf:
     plus = float("inf")
@@ -203,7 +190,7 @@ class Damped_ART_TV_Segmentation:
         - step has the form t / (k + 1)**a where k is the iteration number.
         Another step strategy can be provided via a step callback method.
 
-        TODO vectorial values for x would be nice for parallel tomo!
+        TODO: vectorial values for x would be nice for parallel tomo!
             I just don't want to add it now, would make debugging more
             complicated.
 
@@ -324,7 +311,6 @@ class Damped_ART_TV_Segmentation:
         self._box = (xmin, xmax)
 
     def box_project(self):
-
         if self._box[0] > Inf.minus:
             np.place(self.x, self.x < self._box[0], self._box[0])
         if self._box[1] < Inf.plus:
@@ -400,21 +386,20 @@ class Damped_ART_TV_Segmentation:
                 ai = self.A[i]
                 bi = self.b[i]
 
+                # Todo? factor properly or everything in C?
                 # maybe I should have specific methods?
                 # no reaction toward segmentation:
                 if not self.react:
                     z = self.x + ((bi - ai @ self.x) / (1 + ck)) * ai
                 else:
-                    dki = (self.gamma * self.roi * self.d + (1 / tauk) * self.x) / ck
+                    # segmentation ROI is the full volume
                     if self.full_volume:
+                        dki = (self.gamma * self.roi * self.d + (1 / tauk) * self.x) / ck
                         z = dki + ((bi - ai @ dki) / (1 + ck)) * ai
                     else:
-                        try:
-                            z = solver_smw(ai, Vk, bi, dki)
-                            # TODO: modify the Sherman-Woodbury formula to deal with Vk^{-1}
-                            #   directly and rewrite the sparse part! That should be easy!
-                        except:
-                            print("Boooh!!!")
+                        # segmentation ROI is a smaller volume than x
+                        dki = (self.gamma * self.roi * self.d + (1 / tauk) * self.x)
+                        z = solver_smw(ai, Wk, bi, dki)
 
                 self.x = (1 - self.rho) * self.x + self.rho * z
                 self.x.shape = self.x.size
