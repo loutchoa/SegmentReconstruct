@@ -33,15 +33,6 @@ __author__ = "François Lauze, University of Copenhagen"
 __date__ = "1/21/22"
 __version__ = "0.0.1"
 
-def print_lsqr_info(r):
-    keys = ('lstop', 'itn', 'r1norm', 'r2norm', 'anorm', 'acond', 'arnorm', 'xnorm', 'var')
-    A = {}
-    for i, key in enumerate(keys):
-        A[key] = r[i]
-
-    for key, val in A.items():
-        print(f"{key} -> {A[key]}")
-
 
 def create_projection_data_(n, dirs=90):
     """
@@ -96,20 +87,28 @@ def initial_segmentation(x, k, noise_level=0.1):
 
 
 class DisplayImage:
-    def __init__(self, x, dims, x_gt=None):
-        if x_gt is not None:
-            self.fig, (ax_gt, self.ax) = plt.subplots(1, 2)
-            ax_gt.imshow(x_gt)
-        else:
-            self.fig, self.ax = plt.subplots(1, 2)
+    def __init__(self, x, dims, x_gt=None, x_seg=None):
         self.xshape = dims
+        if (x_gt is not None) and (x_seg is not None):
+            self.fig, (ax_gt, ax_seg, self.ax) = plt.subplots(1, 3)
+            ax_gt.imshow(np.reshape(x_gt, self.xshape))
+            ax_gt.set_title("Ground truth")
+            ax_seg.imshow(np.reshape(x_seg, self.xshape))
+            ax_seg.set_title("Segmentation")
+        elif x_gt is not None:
+            self.fig, (ax_gt, self.ax) = plt.subplots(1, 2)
+            ax_gt.imshow(np.reshape(x_gt, self.xshape))
+            ax_gt.set_title("Ground truth")
+        else:
+            self.fig, self.ax = plt.subplots(1, 1)
         self.imdata = self.ax.imshow(np.reshape(x, self.xshape))
+        self.ax.set_title("Reconstruction")
 
     # makes the object callable like a function.
     # dummy second variable cause some sweep_callbacks take two parameters
     def __call__(self, y, dummy=None):
         self.imdata.set_data(np.reshape(y, self.xshape))
-        plt.pause(0.01)
+        plt.pause(0.001)
 
 
 class Objective:
@@ -145,33 +144,36 @@ def test_solver():
     directions = 180
 
     x, A, b = create_projection_data_(resolution, directions)
-    b_noisy = b + np.random.randn(*b.shape) * 0.1
-    d = initial_segmentation(x, 5, noise_level=0.2)
+    b_noisy = b + np.random.randn(*b.shape) * 1.0
+    d = initial_segmentation(x, 5, noise_level=0.1)
 
-    u, v = np.mgrid[-1:1:100*1j, -1:1:100*1j]
-    roi = u**2 + v**2 < 0.5
+    u, v = np.mgrid[-1:1:resolution*1j, -1:1:resolution*1j]
+    roi = u**2 + v**2 < 0.125
+    # start with a fake ROI, should be the same as full volume!
+    # roi = np.ones_like(x, dtype=bool)
 
     An, bn = reduce_and_normalise_system(A, b_noisy.ravel())
     dims = (2, x.shape)
-    alpha = 0.0002
-    beta = 0.001
+    alpha = 0.01
+    beta = 0.02
     x0 = np.random.rand(*x.shape) * x.max()
     x0.shape = x0.size
     d.shape = d.size
     roi.shape = roi.size
 
-    dp = DisplayImage(x0, dims[1], x_gt=x)
+    dp = DisplayImage(x0, dims[1], x_gt=x, x_seg=d)
     obj_func = Objective(An, bn, alpha, beta, dims, d)
 
-    damped_art = Damped_ART_TV_Segmentation(An, bn, alpha, beta, d, dims, x0, roi=None)# roi)
+    damped_art = Damped_ART_TV_Segmentation(An, bn, alpha, beta, d, dims, x0, roi=roi)
     damped_art.add_start_callback(dp)
-    damped_art.add_start_callback(obj_func)
+    # damped_art.add_start_callback(obj_func)
     damped_art.add_sweep_callback(obj_func)
     damped_art.add_sweep_callback(dp)
     damped_art.add_end_callback(obj_func)
-    damped_art.step_callback(Standard_step(t=1000.0))
-    damped_art.max_iterations = 120
-    damped_art.tolerance = 1e-4
+    damped_art.step_callback(Standard_step(t=10.0, a=0.7))
+    damped_art.max_iterations = 30
+    damped_art.iterations_fista = 80
+    damped_art.tolerance = 1e-5
     damped_art.solve()
 
     _, ax = plt.subplots(1,1)

@@ -435,6 +435,3 @@ class Stencil3D:
     def divergence_3D(self, f):
         """2D backward differences divergence from 3D field, for convenience."""
         return self.unflatten((self.divergence_from_3D(f)))
-
-
-i
