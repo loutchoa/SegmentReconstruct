@@ -33,33 +33,33 @@ def Pc(x, xmin, xmax):
     """
     np.place(x, x < xmin, xmin)
     np.place(x, x > xmax, xmax)
-
-
-def project_on_field_of_balls(psi, l=1.0):
-    """
-    project a vector field on the field of radius l balls,
-    i.e. each vector v of the field is projected in a radius l ball. If 
-    |v| <= l, nothing to do, if |v| > l, normalise v so that its norm is 
-    actually l.
-    
-    :param psi: numpy array.
-        the vector field to be projected
-    :param l: float. Then radius of each ball.
-    :return: psi projected
-    """
-
-    psishape = psi.shape
-    vdim = psishape[-1]
-    rdim = reduce(mul, psishape[:-1], 1)
-    psi.shape = (rdim, vdim)
-
-    psinorm = np.sqrt(np.sum(psi ** 2, axis=1))
-    psinorm = (psinorm / l) * (psinorm > l) + np.ones_like(psinorm) * (psinorm <= l)
-    # np.place(psinorm, psinorm <= 1.0, 1.0)
-    for i in range(vdim):
-        psi[:, i] /= psinorm
-    psi.shape = psishape
-    return psi
+#
+#
+# def project_on_field_of_balls(psi, l=1.0):
+#     """
+#     project a vector field on the field of radius l balls,
+#     i.e. each vector v of the field is projected in a radius l ball. If
+#     |v| <= l, nothing to do, if |v| > l, normalise v so that its norm is
+#     actually l.
+#
+#     :param psi: numpy array.
+#         the vector field to be projected
+#     :param l: float. Then radius of each ball.
+#     :return: psi projected
+#     """
+#
+#     psishape = psi.shape
+#     vdim = psishape[-1]
+#     rdim = reduce(mul, psishape[:-1], 1)
+#     psi.shape = (rdim, vdim)
+#
+#     psinorm = np.sqrt(np.sum(psi ** 2, axis=1))
+#     psinorm = (psinorm / l) * (psinorm > l) + np.ones_like(psinorm) * (psinorm <= l)
+#     # np.place(psinorm, psinorm <= 1.0, 1.0)
+#     for i in range(vdim):
+#         psi[:, i] /= psinorm
+#     psi.shape = psishape
+#     return psi
 
 
 def fistaTV(b, l, n, xmin=0.0, xmax=float("inf")):
@@ -71,7 +71,7 @@ def fistaTV(b, l, n, xmin=0.0, xmax=float("inf")):
     i.e. the proximal $prox_f(b)
     where f = l*\|D.\| + i_B(.) with
 
-    i_B(x) = +infty if one of the components of $x$ does not
+    i_B(x) = +infinity if one of the components of x does not
     satisfy xmin <= x_i <= xmax, and i_B(x) = 0 otherwise,
     i.e.,  identical bounds box constraint
 
@@ -294,7 +294,19 @@ class TVProximal:
         self.i = None
         self.x = None
 
-    def set_spatial_weight(self, l, inner, sup_norm_l2=-1):
+    @property
+    def gamma(self):
+        return self._gamma
+
+    @gamma.setter
+    def gamma(self, value):
+        if value > 0:
+            self._gamma = value
+        else:
+            # should add a warning?
+        self._gamma = 1.0
+
+    def set_spatial_weight_field(self, l, inner, sup_norm_l2=-1):
         """Set the weight field l(s).
 
         If l is "inner", i.e., we use D.l and not l.D
