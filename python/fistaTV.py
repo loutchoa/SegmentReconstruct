@@ -20,11 +20,20 @@ from operator import mul
 from functools import reduce
 from projectors import (
     project_on_field_of_balls,
-    project_on_field_of_Frobenius_balls
+    project_on_field_of_Frobenius_balls,
+    project_on_simplex_field
 )
-from math import sqrt
-import numbers
+from math import sqrt, ceil
+from irregular_domain import Stencil2D
 # from scalespace import gaussian_scalespace
+import matplotlib.pyplot as plt
+from matplotlib import cm
+import matplotlib.gridspec as gridspec
+from skimage import data
+from sklearn.cluster import KMeans
+from tomo_utils import Shepp_Logan
+import random
+
 
 
 def Pc(x, xmin, xmax):
@@ -204,7 +213,7 @@ def fistaTV_weighted(b, l, W, n, omega=None, xmin=0.0, xmax=float("inf")):
 
 
 class TVProximal:
-    def __init__(self, D, DT, dim, projectC=None, vectorial=False, iterations=50):
+    def __init__(self, D, Div, dim, projectC=None, vectorial=False, iterations=50):
         """Compute a (generalised) proximal for a TV norm.
 
         Should handle
@@ -261,8 +270,8 @@ class TVProximal:
         -----------
         D : function-like
             gradient operator
-        DT : function-like
-            adjoint gradient a.k.a. minus divergence operator.
+        Div : function-like
+            divergence operator, i.e -D.T.
         dim : int
             2 for a planar problem, 3 for a 3D one.
         projectC : function-like, optional
@@ -277,7 +286,7 @@ class TVProximal:
         self._gamma = 1.0
         self.iterations = iterations
         self.D = D
-        self.DT = DT
+        self.Div = Div
         self.dim = dim
         self.vectorial = vectorial
         self.omega = 8 if dim == 2 else 12
@@ -296,15 +305,17 @@ class TVProximal:
 
     @property
     def gamma(self):
+        """Regularisation weight."""
         return self._gamma
 
     @gamma.setter
     def gamma(self, value):
+        """Regularisation weight."""
         if value > 0:
             self._gamma = value
         else:
             # should add a warning?
-        self._gamma = 1.0
+            self._gamma = 1.0
 
     def set_spatial_weight_field(self, l, inner, sup_norm_l2=-1):
         """Set the weight field l(s).
@@ -350,31 +361,47 @@ class TVProximal:
 
     @property
     def algorithm(self):
+        """Specify optimisation algorithm 'fista' or 'gp'. """
         return self._algorithm
 
     @algorithm.setter
     def algorithm(self, method_name):
-        if method_name is not in ('fista', 'gp')
+        """Specify optimisation algorithm 'fista' or 'gp'. """
+        if method_name not in ('fista', 'gp'):
             raise ValueError(f'algorith should either be "fista" or "gp" (gradient-projection)')
         self._algorithm = method_name
 
     def add_callback(self, callback):
+        """Register a callback for the optimisation loop.
+
+        The callback is expected to have type
+        callback(x, k)->None
+        where
+         - x should be the current estimate of the regularised image
+         - k should be the iteration number.
+        """
         self.callbacks.append(callback)
 
     def run_callbacks(self):
-        """ Run the registered callback."""
+        """ Run the registered callback.
+
+        Callbacks are run in the order they were registered.
+        """
         for callback in self.callbacks:
             callback(self.x, self.i)
 
     @property
     def reset_dual_variable(self):
+        """Controls the behavior of the dual variable between solver calls."""
         return self._reset_dual_variable
 
     @reset_dual_variable.setter
     def reset_dual_variable(self, yesno):
+        """Controls the behavior of the dual variable between solver calls."""
         self._reset_dual_variable = yesno
 
     def create_dual_variable(self, b):
+        """Creates a dual variable with the proper shape."""
         self.phi = np.zeros(b.shape + (self.dim,), dtype=b.dtype)
 
     def _run_fista(self, b):
@@ -385,16 +412,15 @@ class TVProximal:
         previous_phi = self.phi.copy()
         t = 1.0
         L = self.omega * self._gamma
-
         self.x = b.copy()
 
         for self.i in range(self.iterations):
-            self.x[...] = b - self._gamma * self.DT(psi)
+            self.x[...] = b + self._gamma * self.Div(psi)
             self.Pc(self.x)
 
             self.run_callbacks()
 
-            self.phi[...] = self.DT(self.x)/L + psi
+            self.phi[...] = self.D(self.x)/L + psi
             self.Pp(self.phi)
 
             t_next = (1 + sqrt(1 + 4*t))/2
@@ -403,7 +429,7 @@ class TVProximal:
             psi[...] = (1 + theta) * self.phi - theta * previous_phi
             previous_phi = self.phi
             t = t_next
-        self.x = b - self._gamma * self.DT(self.phi)
+        self.x = b + self._gamma * self.Div(self.phi)
         self.Pc(self.x)
         return self.x
 
@@ -412,35 +438,30 @@ class TVProximal:
         if self.reset_dual_variable or self.phi is None:
             self.create_dual_variable(b)
 
+        L = self.omega * self._gamma
         self.x = b.copy()
 
         for self.i in range(self.iterations):
-            self.x[...] = b - self._gamma * self.DT(self.phi)
+            self.x[...] = b + self._gamma * self.Div(self.phi)
             self.Pc(self.x)
-            L = self.omega * self._gamma
 
             self.run_callbacks()
 
-            self.phi[...] += self.DT(self.x) / L
+            self.phi[...] += self.D(self.x) / L
             self.Pp(self.phi)
 
-        self.x = b - self._gamma * self.DT(self.phi)
+        self.x = b + self._gamma * self.Div(self.phi)
         self.Pc(self.x)
         return self.x
 
     def run(self, b):
+        """Runs the solver."""
         if self._algorithm == 'fista':
             return self._run_fista(b)
         return self._run_gp(b)
 
 
-
-if __name__ == "__main__":
-    import matplotlib.pyplot as plt
-    from matplotlib import cm
-    from skimage import data
-    import matplotlib.gridspec as gridspec
-
+def test_the_two_fistas():
     image = data.camera().astype('float')
     # image = gaussian_scalespace(image, 0.1)
 
@@ -508,5 +529,121 @@ if __name__ == "__main__":
 
     for s in [axw, axl, axx, axy, axz]:
         s.axis('off')
-
     plt.show()
+
+
+class Display_image_Regularisation:
+    """Function object used as callback in test_tv_proximal_scalar."""
+    def __init__(self, gt, stencil):
+        self.gt = gt
+        self.stencil = stencil
+        _, (ax_orig, self.ax_evol) = plt.subplots(1, 3)
+        ax_orig.imshow(self.gt)
+        self.dobj = self.ax_evol.imshow(self.gt)
+
+    def prepare_image(self, x):
+        return self.gt * (1- self.stencil.domain) + self.stencil.unflatten(x)
+
+    def __call__(self, x, k):
+        self.dobj.set_data(self.prepare_image(x))
+        self.ax_evol.set_title(f"Iteration {k}")
+        plt.pause(0.01)
+
+
+def test_tv_proximal_scalar():
+    # plt.ion()
+    image = data.camera().astype('float')
+    dim1, dim2 = image.shape
+    x, y = np.mgrid[-1:1:dim1 * 1j, -1:1:dim2 * 1j]
+    M = x**2 + y**2 < 0.5
+    stencil = Stencil2D(M)
+    D = stencil.gradient_flattened
+    Div = stencil.divergence_flattened
+    dim = 2
+    
+    def pos_val(x):
+        Pc(x, xmin=0, xmax=float("inf"))
+
+    display_evolution = Display_image_Regularisation(image, stencil)
+    fb = stencil.flatten(image)
+    tv_prox = TVProximal(D, Div, dim, pos_val)
+    tv_prox.add_callback(display_evolution)
+    tv_prox.algorithm = 'gp'
+    tv_prox.iterations = 200
+    tv_prox.gamma = 100.0
+    tv_prox.run(fb)
+    plt.show()
+
+
+def shuffle_labels(labels, level=0.1):
+    l = len(labels)
+    n = int(ceil(l * level))
+    indices = list(range(l))
+    random.shuffle(indices)
+    indices = indices[:n]
+    q = labels[indices]
+    random.shuffle(q)
+    labels[indices] = q
+    return labels
+
+
+class Display_Field_Regularisation:
+    def __init__(self, gt, n_classes, stencil, delay=0.01):
+        """Function object used as callback in test_tv_proximal_vectorial."""
+        self.stencil = stencil
+        self.gt = gt
+        self.delay = delay
+        self.M = stencil.domain
+        self.c = np.arange(n_classes)
+        start_value = self.prepare_image(self.gt, flattened=False)
+        _, (ax_orig, self.ax_evol) = plt.subplots(1, 2)
+        ax_orig.imshow(start_value)
+        self.dobj = self.ax_evol.imshow(start_value)
+
+    def prepare_image(self, v, flattened=True):
+        bv = None
+        if not flattened:
+            # I assume I am just passing the label image
+            bv = v
+        else:
+            # most frequent use from vector representation
+            bv = self.stencil.unflatten(v @ self.c)
+        return bv + 0.5 * (1 - self.M) * self.gt
+
+    def __call__(self, x, k):
+        self.dobj.set_data(self.prepare_image(x))
+        self.ax_evol.set_title(f"Iteration {k}")
+        plt.pause(self.delay)
+
+
+def test_tv_proximal_vectorial():
+    sl = Shepp_Logan(100)
+    n_classes = 5
+    kmeans = KMeans(n_clusters=n_classes).fit(np.reshape(sl, (-1, 1)))
+    labels = kmeans.labels_
+    shuffle_labels(labels)
+    labels.shape = sl.shape
+    Id5 = np.eye(5, dtype="float32")
+    v = Id5[labels]
+    dim1, dim2 = labels.shape
+
+    x, y = np.mgrid[-1:1:dim1 * 1j, -1:1:dim2 * 1j]
+    M = x ** 2 + y ** 2 < 0.5
+    stencil = Stencil2D(M)
+    vf = stencil.flatten(v)
+
+    display_evolution = Display_Field_Regularisation(labels, n_classes, stencil, delay=0.1)
+    D = stencil.gradient_flattened
+    Div = stencil.divergence_flattened
+    dim = 2
+    tv_prox = TVProximal(D, Div, 2, projectC=project_on_simplex_field, vectorial=True)
+    tv_prox.gamma = 200
+    tv_prox.iterations = 100
+    tv_prox.add_callback(display_evolution)
+    tv_prox.algorithm = 'fista'
+    tv_prox.run(vf)
+    plt.show()
+
+
+if __name__ == "__main__":
+    test_tv_proximal_vectorial()

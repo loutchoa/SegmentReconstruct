@@ -430,6 +430,12 @@ class Damped_ART_TV_Segmentation:
 
         self.run_end_callbacks()
 
-#
+
+# Ala Andersen-Hansen, or all the v stuff in one step?
+# the TV Proximal class can easily run it in one "step--
+class Segmentation_proximal:
+    def __init__(self, v, g):
+        pass
+        # Not now, running out of time!
 #
 #
