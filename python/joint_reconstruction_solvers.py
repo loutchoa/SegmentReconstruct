@@ -29,9 +29,21 @@ import matplotlib.pyplot as plt
 import numpy
 import numpy as np
 # import  matplotlib.pyplot as plt
-from fistaTV import fistaTV, fistaTV_weighted
+from fistaTV import (
+    fistaTV, fistaTV_weighted, TVProximal
+)
 from tomo_utils import clean_projection_system, normalise_projection_system
-from graddiv import grad2, grad3
+from graddiv import (
+    grad2, grad3, grad2v, grad3v,
+    div2, div3, div2v, div3v
+)
+from irregular_domain import (
+    Stencil2D, Stencil3D
+)
+from projectors import project_on_simplex_field
+
+
+
 
 __version__ = "0.0.1"
 __author__ = "François Lauze"
@@ -143,6 +155,16 @@ class Standard_step:
 
     def __call__(self, k):
         return self.t / (k + 1) ** self.a
+
+
+class Special_Step:
+    def __init__(self, t=0.1, a = 1.0, k=1):
+        self.t = t
+        self.a = a
+        self.k = k
+
+    def __call__(self, dummy=None):
+        return self.t/(self.k + 1) ** self.a
 
 
 def solver_smw(a, W, b, d):
@@ -368,7 +390,7 @@ class Damped_ART_TV_Segmentation:
         self.run_start_callbacks()
 
         Vk = None  # dummy stuff to remove a PyCharm message
-        Wk = None # idem
+        Wk = None  # idem
         for self.iteration in range(self._max_iterations):
             self.previous_x = self.x.copy()
 
@@ -432,10 +454,153 @@ class Damped_ART_TV_Segmentation:
 
 
 # Ala Andersen-Hansen, or all the v stuff in one step?
-# the TV Proximal class can easily run it in one "step--
+# the TV Proximal class can easily run it in one "step"
 class Segmentation_proximal:
-    def __init__(self, v, g):
-        pass
-        # Not now, running out of time!
-#
+    def __init__(self, beta, gamma, dims, rho=1.0, method='fwsp', M=None):
+        """Compute a proximal for the segmentation part.
+
+        The class sets the weights, dimensions and domain.
+        Different methods will control which kind of computation is actually
+        performed. There are four choices:
+            - 'fwsp' : Fista-TV with simplex projection: Fista is run, directly
+                incorporating the simplex projection,
+            - 'fwosp' : no simplex projection, just Fista-TV
+            - 'gpwsp' : Beck and Teboulle's gradient projection method,
+                with simplex projection,
+            -  'gpwosp' : the same with simplex projection.
+
+        Two types of callbacks:
+            - callbacks with signature callback(v, k)->None can
+            be added, they are actually passed to the TV Proximal calculation
+            via the add_tv_callback(9 method
+            - callbacks with signature callback(x, v, c)->None are added with
+             add_seg_callback(). For instance to record the objective values.
+             (maybe it's too much...)
+
+        Parameters:
+        ----------
+        beta : float
+            weight of the segmentation term
+        alpha : float
+            weight of the regularisation
+        dim : list (int, shape)
+            dimensionality of the problem and true image shapes,
+            dimensionality should be 2 or 3, true image shape shoud
+            be a int list
+        rho : float, optional
+            (over)relaxation parameter. The default is 1.0
+        M : bool numpy array, optional
+            the domain mask. If not specified, it means the whole domain.
+            the default value is None
+        """
+        self.domain = M
+        self.dims = dims
+        self.gamma = gamma
+        self.beta = beta
+        self.rho = rho
+        self.stencil = None
+        self.D = None
+        self.Div = None
+        self._method = method
+        self.seg_prox_callbacks = []
+        self.v = None
+        self._keep_dual_variable = False
+
+        if self.domain is None:
+            if self.dims[0] == 2:
+                self.D = grad2v
+                self.Div = div2v
+            else:
+                self.D = grad3v
+                self.Div = div3v
+        else:
+            if self.dims[0] == 2:
+                self.stencil = Stencil2D(self.domain)
+                self.D = self.stencil.gradient_flattened
+                self.Div = self.stencil.divergence_flattened
+            else:
+                self.stencil = Stencil3D(self.domain)
+                self.D = self.stencil.gradient_flattened
+                self.Div = self.stencil.divergence_flattened
+
+        self.tv_prox = TVProximal(self.D, self.Div, self.dims[0], vectorial=True)
+
+    @property
+    def iterations(self):
+        return self.tv_prox.iterations
+
+    @iterations.setter
+    def iterations(self, k):
+        self.tv_prox.iterations = k
+
+    def add_TV_callback(self, tv_callback):
+        self.tv_prox.add_callback(tv_callback)
+
+    def reset_TV_callbacks(self):
+        self.tv_prox.callbacks = []
+
+    def add_seg_callbacks(self, seg_callback):
+        self.seg_prox_callbacks.append(seg_callback)
+
+    @property
+    def keep_dual_variable(self):
+        return self._keep_dual_variable
+
+    @keep_dual_variable.setter
+    def keep_dual_variable(self, yesno):
+        self._keep_dual_variable = yesno
+
+    @property
+    def method(self):
+        return self._method
+
+    @method.setter
+    def method(self, name):
+        if name in ('fwsp', 'fwosp', 'gpwsp', 'gpwosp'):
+            self._method = name
+            if name in ('fwsp', 'fwosp'):
+                self.tv_prox.algorithm = 'fista'
+            else:
+                self.tv_prox.algorithm = 'gp'
+        else:
+            raise ValueError(f'method "{name}" illegal. Must be one of "fwsp", "fwosp", "gpwsp", "gpwosp".')
+
+    def solve(self, v, g, tau):
+        self.tv_prox.gamma = self.gamma * tau
+        self.tv_prox.reset_dual_variable = not self.keep_dual_variable
+
+        # in the first case, no simplex projection is performed during proximal calculations
+        if self._method not in ('fwsp', 'gpwsp'):
+            self.v = self.tv_prox.run(v - 0.5 * self.beta * tau * g)
+        # in that case, it is.
+        else:
+            self.tv_prox.init_Pc(project_on_simplex_field)
+            self.v = self.tv_prox.run(v - 0.5 * self.beta * tau * g)
+
+        v[...] = (1 - self.rho) * v + self.rho * self.v
+        if self.method in ('fwosp', 'gpwosp'):
+            project_on_simplex_field(self.v)
+        return self.v
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 #

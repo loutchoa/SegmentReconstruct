@@ -9,10 +9,10 @@
     transform a label field into a binary simplex
     field. 
     Transform a simplex valued field into a label field
-    via thresholdding/projection onto vertices
+    via thresholding/projection onto vertices
 
 This is a pure Python reimplementation of my old C++ code.
-This should be moved into some simplex/segmenation package
+This should be moved into some simplex/segmentation package
 
 @author: François Lauze, University of Copenhagen    
 Created on Tue Nov 16 14:16:12 2021
@@ -28,7 +28,6 @@ __version__ = "0.0.1"
 __author__ = "François Lauze"
 
 
-
 def label_to_simplex_field(u, dtype='float32'):
     """
     Convert a integer valued label field into a simplex valued field.
@@ -36,7 +35,7 @@ def label_to_simplex_field(u, dtype='float32'):
         input field, dimension dim. Assume that labels are integers 
         0 <= l <= K_1
     :return: ndarray float
-        output field, dimemnsion (dim, K) 
+        output field, dimension (dim, K)
     """
     
     K = u.max() + 1
@@ -44,19 +43,17 @@ def label_to_simplex_field(u, dtype='float32'):
     return idK[u]
 
 
-
 def simplex_to_label_field(v):
     """
     Project/convert a simplex valued field to an integer one.
     :param v: ndarray of floats
-        a field of dimension basedim + (K,), supposed to be simplex valued
+        a field of dimension base_dim + (K,), supposed to be simplex valued
     :return: ndarray of ints
-        output field, of dimensions basedim, with values in {0..K-1}
+        output field, of dimensions base_dim, with values in {0..K-1}
     """
     
     return np.argmax(v, axis=-1)
 
-    
 
 if __name__ == '__main__':
     u = np.random.randint(0,5,size=(2,8))

@@ -19,8 +19,13 @@ from scipy.sparse.linalg import lsqr
 from joint_reconstruction_solvers import (
     Kaczmarz,
     Damped_ART_TV_Segmentation,
-    Standard_step
+    Standard_step,
+    Segmentation_proximal,
+    Special_Step
 )
+from fistaTV import Display_Field_Regularisation
+
+
 from sklearn.cluster import KMeans
 from random import shuffle
 
@@ -83,7 +88,8 @@ def initial_segmentation(x, k, noise_level=0.1):
     shuffle_labels(labels, noise_level)
     labels.shape = x.shape
     Idk = np.eye(k)
-    return np.squeeze(Idk[labels] @ centres)
+    v = Idk[labels]
+    return np.squeeze(v @ centres), v, centres
 
 
 class DisplayImage:
@@ -139,13 +145,15 @@ class Objective:
             print(f"At sweep {k}.")
 
 
-def test_solver():
+
+
+def test_reconstruction_solver():
     resolution = 100
     directions = 180
 
     x, A, b = create_projection_data_(resolution, directions)
     b_noisy = b + np.random.randn(*b.shape) * 1.0
-    d = initial_segmentation(x, 5, noise_level=0.1)
+    d, _, _ = initial_segmentation(x, 5, noise_level=0.1)
 
     u, v = np.mgrid[-1:1:resolution*1j, -1:1:resolution*1j]
     roi = u**2 + v**2 < 0.125
@@ -171,8 +179,8 @@ def test_solver():
     damped_art.add_sweep_callback(dp)
     damped_art.add_end_callback(obj_func)
     damped_art.step_callback(Standard_step(t=10.0, a=0.7))
-    damped_art.max_iterations = 30
-    damped_art.iterations_fista = 80
+    damped_art.max_iterations = 1
+    damped_art.iterations_fista = 10
     damped_art.tolerance = 1e-5
     damped_art.solve()
 
@@ -185,9 +193,207 @@ def test_solver():
     plt.show()
 
 
+def cluster_means(x, v):
+    """
+    compute cluster means from image data and membership vector v
+
+    Parameters:
+    -----------
+    img: float ndarray
+        array of size (m1, m2) or (m1, m2, m3) representing the data
+    v: float ndarray
+        array of size (m1, m2, K) or (m1, m2, m3, K) representing the
+        cluster memberships
+
+    Returns:
+    -------
+    c: float ndarray
+        array of size (K,) of cluster values
+    """
+
+    # start by flattening temporarily
+    img_shape = x.shape
+    nb_pixels = x.size
+    x.shape = nb_pixels
+    K = v.shape[-1]
+    v.shape = (nb_pixels, K)
+
+    c = (x @ v) / v.sum(axis=0)
+
+    v.shape = img_shape + (K,)
+    x.shape = img_shape + ()
+    return c
+
+
+def kmeans_sqd_vector(x, c):
+    """
+    k-means squared-distance between sample and means vector
+
+    Parameters
+    ----------
+    x : float(32) ndarray
+        (m1,m2) or (m1,m2,m3) image/data array
+    c : float ndarray
+        (K,) array of cluster centers
+
+    Returns
+    -------
+    g: float(32) ndarray
+        array of shape(m1, m2, K) or (m1, m2, m3, K) containing the
+        square distances (img[ijl] - c[k])^2
+    """
+    K = len(c)
+    ndims = x.ndim
+    img_shape = x.shape
+    x.shape = img_shape + (1,)
+    c.shape = (1,) * ndims + (K,)
+
+    g = (x - c) ** 2
+    x.shape = img_shape
+    c.shape = K
+    return g
+
+
+def kmeans_sq_distance_vector(x, c):
+    """
+    k-means squared-distance between sample and means vector
+
+    Parameters
+    ----------
+    x : float(32) ndarray
+        (m1,m2) or (m1,m2,m3) image/data array
+    c : float ndarray
+        (K,) array of cluster centers
+
+    Returns
+    -------
+    g: float(32) ndarray
+        array of shape(N, K)  containing the
+        square distances (x[n] - c[k])^2
+    """
+    K = len(c)
+    x.shape = (-1, 1)
+    c.shape = (1, K)
+
+    g = (x - c) ** 2
+    x.shape = x.size
+    return g
+
+
+###########################################
+# getting a bit better...
+############################################
+
+
+class Display_NoROI_Field_Regularisation:
+    def __init__(self, recons, gt, n_classes, delay=0.01):
+        """Function object used as callback in test_tv_proximal_vectorial."""
+        self.gt = gt
+        self.delay = delay
+        self.c = np.arange(n_classes)
+        start_value = self.prepare_image(self.gt, label_data=True)
+        self.fig, (self.ax_recons, self.ax_orig, self.ax_evol) = plt.subplots(1, 3)
+        self.recons_obj = self.ax_recons.imshow(recons)
+        self.gtobj = self.ax_orig.imshow(start_value)
+        self.dobj = self.ax_evol.imshow(start_value)
+
+    def prepare_image(self, v, label_data=False):
+        bv = v if label_data else np.squeeze(v @ self.c)
+        return bv + 0.5 * self.gt
+
+    def change_gt(self, new_gt):
+        new_gt = self.prepare_image(new_gt)
+        self.gtobj.set_data(new_gt)
+        plt.pause(self.delay)
+
+    def change_recons(self, recons):
+        self.recons_obj.set_data(recons)
+        plt.pause(self.delay)
+
+    def change_title(self, message):
+        self.fig.suptitle(message)
+
+    def __call__(self, x, k):
+        self.dobj.set_data(self.prepare_image(x))
+        self.ax_evol.set_title(f"Iteration {k}")
+        plt.pause(self.delay)
+
+
+def prepare_data(resolution, directions, sinogram_noise_level=1, n_classes=5, segmentation_noise_level=0.1):
+    x, A, b = create_projection_data_(resolution, directions)
+    b_noisy = b + np.random.randn(*b.shape) * sinogram_noise_level
+    d, v0, centres = initial_segmentation(x, n_classes, noise_level=segmentation_noise_level)
+    An, bn = reduce_and_normalise_system(A, b_noisy.ravel())
+    return x, An, bn, d, v0, centres
+
+
+def prepare_roi(resolution, radius):
+    u, v = np.mgrid[-1:1:resolution*1j, -1:1:resolution*1j]
+    return u**2 + v** 2 < radius
+
+
+def test_full_solver_no_roi():
+    resolution = 100
+    directions = 180
+    n_classes = 5
+
+    # get phantom, projection matrices
+    x, A, b, d, v, centres = prepare_data(resolution, directions, n_classes=n_classes)
+    roi = None
+
+    alpha = 0.01
+    beta = 0.02
+    gamma = 0.01
+
+    dims = (2, x.shape)
+    # init reconstruction with uniform noise
+    x0 = np.random.rand(*x.shape) * x.max()
+    x0.shape = x0.size
+    d.shape = d.size
+    x.shape = x.size
+
+    # step parameters
+    t = 10
+    a = 0.7
+
+    dp = DisplayImage(x0, dims[1], x_gt=x, x_seg=d)
+    obj_func = Objective(A, b, alpha, beta, dims, d)
+
+    damped_art = Damped_ART_TV_Segmentation(A, b, alpha, beta, d, dims, x0)
+    damped_art.add_start_callback(dp)
+    damped_art.add_sweep_callback(obj_func)
+    damped_art.add_sweep_callback(dp)
+    damped_art.add_end_callback(obj_func)
+    damped_art.max_iterations = 1
+
+    seg_proximal = Segmentation_proximal(beta, gamma, dims, M=roi)
+    df = Display_NoROI_Field_Regularisation(np.reshape(x0, dims[1]), np.reshape(d, dims[1]), n_classes)
+    seg_proximal.add_TV_callback(df)
+    seg_proximal.iterations = 50
+
+    for k in range(20):
+        ss = Special_Step(t=t, a=a, k=k)
+        damped_art.step_callback(ss)
+        damped_art.solve()
+
+        # need to compute g from damped_art.x and centres
+        g = kmeans_sq_distance_vector(damped_art.x, centres)
+        g.shape = dims[1] + (n_classes,)
+        tau = ss()
+        df.change_gt(v)
+        df.change_recons(np.reshape(damped_art.x, dims[1]))
+        df.change_title(f"At sweep {k}")
+        seg_proximal.solve(v, g, tau)
+
+        centres = cluster_means(damped_art.x, seg_proximal.v)
+        d = np.squeeze(seg_proximal.v @ centres)
+        d.shape = d.size
+        damped_art.d = d
+
+
 if __name__ == "__main__":
-    #plt.ion()
-    test_solver()
+    # plt.ion()
+    test_full_solver_no_roi()
     input("Press a key to terminate...")
 
 

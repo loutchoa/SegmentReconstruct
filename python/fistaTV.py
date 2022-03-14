@@ -220,11 +220,11 @@ class TVProximal:
         - different gradients and divergences, as long as they
           satisfy proper duality relations.
         - mainly interested in the cases:
-            TV_l(x) = ||l(s)D u(s)||
+            TV_l(x) = ||l(s)D x(s)||
           as well as the "other" weighted:
             TV^l(x) = ||D[l(s)x(s)]||
 
-        The problem to sole is min ||x-b|^2 + 2 gamma ||K x||
+        The problem to sole is min ||x-b||^2 + 2 gamma ||K x||
         with K being D, or D.l or l.D
 
         In both cases, l will be a weight function Omega -> R_+, l(s)
@@ -389,6 +389,10 @@ class TVProximal:
         """
         for callback in self.callbacks:
             callback(self.x, self.i)
+
+    def clear_callbacks(self):
+        """Empty the callback list."""
+        self.callbacks = []
 
     @property
     def reset_dual_variable(self):
@@ -593,22 +597,32 @@ class Display_Field_Regularisation:
         self.stencil = stencil
         self.gt = gt
         self.delay = delay
-        self.M = stencil.domain
+        self.M = stencil.domain if stencil is not None else None
         self.c = np.arange(n_classes)
-        start_value = self.prepare_image(self.gt, flattened=False)
-        _, (ax_orig, self.ax_evol) = plt.subplots(1, 2)
-        ax_orig.imshow(start_value)
+        start_value = self.prepare_image(self.gt, gt=True)
+        _, (self.ax_orig, self.ax_evol) = plt.subplots(1, 2)
+        self.gtobj = self.ax_orig.imshow(start_value)
         self.dobj = self.ax_evol.imshow(start_value)
 
-    def prepare_image(self, v, flattened=True):
+    def prepare_image(self, v, gt=True):
         bv = None
-        if not flattened:
-            # I assume I am just passing the label image
+        if gt or self.M is None:
+            # The initial label image is supposed to have
+            # same size as reconstruction, and if self.M is None,
+            # the ROI was extracted and v is also expected to have
+            # volume dimensions... BE MORE PRECISE WITH THIS COMMENT!!!!!
             bv = v
         else:
             # most frequent use from vector representation
             bv = self.stencil.unflatten(v @ self.c)
-        return bv + 0.5 * (1 - self.M) * self.gt
+        if self.M is None:
+            return bv + 0.5 * self.gt
+        else:
+            return bv + 0.5 * (1 - self.M) * self.gt
+
+    def change_gt(self, new_gt):
+        new_gt = self.prepare_image(new_gt)
+        self.gtobj.set_data(new_gt)
 
     def __call__(self, x, k):
         self.dobj.set_data(self.prepare_image(x))
