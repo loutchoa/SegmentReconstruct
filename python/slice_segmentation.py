@@ -219,7 +219,7 @@ class MultiSegmentationDisplay:
     def __init__(self, x, v, means, title="Segmentation"):
         """Init the display class."""
         self.x = x
-        self.fig, self.axes = plt.subplots(1, 3)
+        self.fig, self.axes = plt.subplots(1, 3, sharey=True, sharex=True)
         for ax in self.axes:
             ax.axis('off')
         self.fig.suptitle(title)
@@ -363,11 +363,11 @@ def segmentation_test():
     K = 5
     # alpha = 7.e6
     # delta = 10.e10
-    alpha = 1.50
-    # delta = np.array([50., 1000., 500., 50., 30000])
-    delta = 10000*np.ones(K)
+    alpha = 1.25
+    delta = np.array([50., 1000., 500., 50., 80000])
+    # delta = 10000*np.ones(K)
     step = Step(t=1.0)
-    v, means, variances = segment_slice_TV_GMM(x, alpha, K, step, means_prior=c0, delta=delta, tol=1e-10, fista_iters=100, max_iters=100)
+    v, means, variances = segment_slice_TV_GMM(x, alpha, K, step, means_prior=c0, delta=delta, tol=1e-10, fista_iters=25, max_iters=25)
     input("Press a key to terminate...")
 
 

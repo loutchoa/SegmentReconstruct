@@ -13,6 +13,8 @@ Date: October 2016
 import os
 import os.path
 import numpy as np
+import matplotlib.pyplot as plt
+from matplotlib import cm
 
 
 def random_image(image_size, number_of_disks, grey_levels_distribution, bg=0.0, grey_levels=None,
@@ -109,12 +111,8 @@ def generate_test_base():
 
 if __name__ == "__main__":
     import matplotlib.pyplot as plt
-    from matplotlib import cm
-    from matplotlib_utils import impixelinfo
-
-    m = 300
-    v = random_image(m, m * 5, [0.1, 0.2, 0.7], grey_levels=[0.25, 0.78, 1.0], min_radius=3, max_radius=7)
-    plt.imshow(v, cmap=cm.Greys_r)
-    impixelinfo()
+    m = 150
+    v = random_image(m, m * 5, [0.1, 0.2, 0.4, 0.25, 0.05], grey_levels=[0.12, 0.22, 0.56, 0.71, 1.0], min_radius=3, max_radius=7)
+    plt.imshow(v)#, cmap=cm.Greys_r)
     plt.show()
 
