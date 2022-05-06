@@ -3,7 +3,8 @@
 @Project:
 @File: slice_segmentation.py
 
-@Description:
+@Description: An example of segmentation of a slice using
+an 'extended' FISTA model.
 
 """
 import warnings

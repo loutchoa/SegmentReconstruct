@@ -224,7 +224,7 @@ class TVProximal:
           as well as the "other" weighted:
             TV^l(x) = ||D[l(s)x(s)]||
 
-        The problem to sole is min ||x-b||^2 + 2 gamma ||K x||
+        The problem to solve is min ||x-b||^2 + 2 gamma ||K x||
         with K being D, or D.l or l.D
 
         In both cases, l will be a weight function Omega -> R_+, l(s)
@@ -294,7 +294,7 @@ class TVProximal:
         self.callbacks = []
         self._reset_dual_variable = True
         self.phi = None
-        self.Pc  = None
+        self.Pc = None
         self.init_Pc(projectC)
         self.l = 1
         self.inner = None
