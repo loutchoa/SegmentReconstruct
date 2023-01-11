@@ -88,7 +88,9 @@ if __name__ == "__main__":
         for level, idx in c_list:
             z += indices_to_image(idx, (m, n)) * level
 
-        plt.imshow(z)
+        f, (axb, axc) = plt.subplots(1,2)
+        axb.imshow(blobs)
+        axc.imshow(z)
         plt.show()
     else:
         plt.imshow(blobs)
