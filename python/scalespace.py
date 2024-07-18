@@ -1,6 +1,8 @@
 # -*- coding: utf-8 -*-
 """
-scalespace implements Fourier-Based Gaussian scale-space / convolution and
+@project: imgtools
+@file: scalespace.py
+@escription: scalespace implements Fourier-Based Gaussian scale-space / convolution and
 scale derivatives for 1D, 2D, 3D signals,signals that can be vector valued.
 
 In spatial domain:
@@ -69,109 +71,91 @@ You should have received a copy of the GNU General Public License
 along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 """
-# should be ignored by Python 3
-from __future__ import print_function
 
-from numpy import inf as Inf
-import numpy as np
 from operator import add
-import sys
-if sys.version_info >= (3, 0):
-    from functools import reduce
+import numpy as np
+from numpy import inf as Inf
+from multiprocessing import cpu_count
+from functools import reduce
+from numbers import Number
+from typing import Union, Tuple, List, Iterable
+
+# Set to FFT to 'pyfftw' to use pyfftw if possible, else numpy
+# set FFT to '' does the same as 'pyfftw'
+# set FFT to 'numpy' or anything not '' or 'pyfftw' to use numpy
+FFT = "numpy"   # Right now, pyfftw is not working properly, so I set it to numpy
+if FFT in ['pyfftw', '']:
+    try:
+        import pyfftw
+        pyfftw.interfaces.cache.enable()
+        FFT_THREADS = cpu_count()  # - there is a bug in pyfftw, so I set it to 1?
+
+        def fftn (data: np.ndarray):
+            return pyfftw.interfaces.numpy_fft.fftn(data, threads=FFT_THREADS)
+
+        def ifftn(data: np.ndarray):
+            return pyfftw.interfaces.numpy_fft.ifftn(data, threads=FFT_THREADS)
+
+    except ImportError:
+        fftn = np.fft.fftn
+        ifftn = np.fft.ifftn
+else:
+    fftn = np.fft.fftn
+    ifftn = np.fft.ifftn
 
 
-# if pyfftw is installed, use it, 
-# else default to numpy.fft
-try:
-    import pyfftw.interfaces.numpy_fft as fft
-    from multiprocessing import cpu_count
-    FFT_PACKAGE = "PYFFTW"
-except:
-    import numpy.fft as fft
-    FFT_PACKAGE = "NUMPYFFT"
-
-
-from math import pow, cos, sin
-
-__author = "François Lauze"
-__version = '0.7.1.1'
-
+__author = "François Lauze, university of Copenhagen"
+__date__ = "Date: 2014-2024."
+__version = '1.57.0796' # pi/2
 
 # Pi and sqrt(-1)
-PI = np.pi
-I = 1j
-
-
-
-if FFT_PACKAGE == "PYFFTW":
-    # number of threads to use in Fourier Transform, 
-    # by default, number of cores, modify if you want
-    # to use less
-    FFT_THREADS = cpu_count()
-    def fftn(f): return fft.fftn(f, threads=FFT_THREADS)
-    def ifftn(f): return fft.ifftn(f, threads=FFT_THREADS)
-else:
-    def fftn(f): return fft.fftn(f)
-    def ifftn(f): return fft.ifftn(f)
+_pi = np.pi
+_i = 1j
 
 
 def gss_fft(f, vectorial):
     """
-    Compute Forward Fourier Transform of f using fftw3.
+    Compute Forward Fourier Transform of f using fftw3 or numpy
 
-    Arguments:
-    ----------
-    f : numpy array
-        spatial-domain function.
-    vectorial: boolean
-        True means the last dimension is vectorial,
+    :param f: Spatial-domain function.
+    :param vectorial: True means the last dimension is vectorial,
         False means f is a scalar valued array.
 
-    Returns:
-    --------
-        Forward Fourier transform of f.
+    :returns: Forward Fourier transform of f.
     """
-    ffdtype = complex if f.dtype in [float, complex] else 'complex64'
+    ff_dtype = complex if f.dtype in [float, complex] else 'complex64'
     if not vectorial:
-        ff = fft.fftn(f)
+        ff = fftn(f)
     else:
-        ff = np.zeros_like(f, dtype=ffdtype)
+        ff = np.zeros_like(f, dtype=ff_dtype)
         vdim = f.shape[0]
         for v in range(vdim):
-            ff[v] = fft.fftn(f[v])
+            ff[v] = fftn(f[v])
     return ff
-# gss_fft()
+
 
 
 def gss_ifft(f, vectorial):
     """
-    Compute Inverse Fourier Transform of f using fftw3.
+    Compute Inverse Fourier Transform of f using fftw3 or numpy
 
-    Arguments:
-    ----------
-    f : numpy array
-        frequency-domain function.
-    vectorial: boolean
-        True means the last dimension is vectorial,
-        False means f is a scalar valued array.
+    :param f: Frequency-domain function.
+    :param vectorial: True means the last dimension is vectorial,
+            False means f is a scalar valued array.
 
-    Returns:
-    --------
-        Inverse Fourier transform of f.
+    :returns: Inverse Fourier transform of f.
     """
-
-    #normfact = f.size if not vectorial else f[0,:].size
-
     if not vectorial:
-        ff = fft.ifftn(f)
-        #ff /= normfact
+        ff = ifftn(f)
+        # ff /= normfact
     else:
         vdim = f.shape[0]
         ff = np.zeros_like(f, dtype=f.dtype)
         for v in range(vdim):
-            ff[v] = fft.ifftn(f[v])
-        #ff /= normfact
+            ff[v] = ifftn(f[v])
+        # ff /= normfact
     return ff.real
+
 
 
 def _to_float_array(s, n, dtype=float, argname1='sigma', argname2='dim'):
@@ -179,18 +163,12 @@ def _to_float_array(s, n, dtype=float, argname1='sigma', argname2='dim'):
     Attempt at converting s to a (numpy) array of length n
     If s turns to be a scalar, just makes an array with repeating values of s n times.
     If s is not scalar, it should already be array like with len n.
-
-    Arguments:
-    ----------
-    s : object
-        stuff to be converted to a float array
-    n : int 
-        positive integer, coding the length of the array
-    Returns:
-    --------
-        array object or exception
+    
+    :param s : Iterable to be converted to a float array
+    :param n: positive integer, coding the length of the array
+    :returns: np.ndarray, float array of length n
+    :raise: TypeError if s is not convertible to a numpy array or if s is not iterable, ValueError if len(s) != n
     """
-
     try:
         s = np.array([float(s)]*n, dtype=dtype)
     except:
@@ -203,49 +181,36 @@ def _to_float_array(s, n, dtype=float, argname1='sigma', argname2='dim'):
     return s
 
 
-
-
-
 def nbc_fourier(f, vectorial=False):
     """
     Reflective boundary conditions to be used with Fourier
     transform, mimicking Neumann BCs
 
-    Arguments:
-    ----------
-    f : numpy array.
-        input image to be symmetrised, dimension up to 3 plus a potential
+    :param f: input image to be symmetrised, dimension up to 3 plus a potential
         vectorial one.
-    vectorial: boolean
+    :param vectorial: boolean
         - False assumes scalar valued image
         - True assumes vector valued image, read from the FIRST dimension.
           (the reason is efficiency of Fourier transform).
 
-    Returns:
-    --------
-        rf: image extended by reflections.
-
-    Raises:
-    -------
-        ValueError if f is more than 3 dimensional.
-        or if f is 1D with vectorial=True
+    :returns: rf: image extended by reflections.
+    :raise:
+        ValueError if f is more than 3-dimensional or if f is 1D with vectorial=True
     """
-
-    dimf = len(f.shape)
-
-    if ((dimf > 3 and not vectorial) or
-        (dimf > 4 and vectorial) or
-            (dimf == 1 and vectorial)):
+    dim_f = len(f.shape)
+    if ((dim_f > 3 and not vectorial) or
+            (dim_f > 4 and vectorial) or
+            (dim_f == 1 and vectorial)):
         raise TypeError('Bad dimensions.')
 
-    # I treat differently vectorial and non vectorial cases.
+    # I treat differently vectorial and non-vectorial cases.
     if not vectorial:
-        if dimf == 1:
+        if dim_f == 1:
             # there is no real notion of vertical or horizontal 1D image,
             # or more precisely it seems to be "horizontal" by default.
             # that's why I think I need hstack() there.
             rf = np.hstack((f, f[::-1]))
-        elif dimf == 2:
+        elif dim_f == 2:
             vf = np.vstack((f, f[::-1, :]))
             rf = np.hstack((vf, vf[:, ::-1]))
         else:
@@ -254,10 +219,10 @@ def nbc_fourier(f, vectorial=False):
             rf = np.concatenate((hf, hf[:, :, ::-1]), axis=2)
 
     else:
-        if dimf == 2:
-            # remark similar to the non vectorial case?
+        if dim_f == 2:
+            # remark similar to the non-vectorial case?
             rf = np.hstack((f, f[:, ::-1]))
-        elif dimf == 3:
+        elif dim_f == 3:
             vf = np.concatenate((f, f[:, ::-1, :]), axis=1)
             rf = np.concatenate((vf, vf[:, :, ::-1]), axis=2)
         else:
@@ -266,102 +231,68 @@ def nbc_fourier(f, vectorial=False):
             rf = np.concatenate((hf, hf[:, :, :, ::-1]), axis=3)
 
     return rf
-# nbc_fourier()
 
 
 def derivative_filter_fourier(dim, order, dtype=float):
     """
-    Derivative filter in Fourier domain. Classically, 
-    computing the Fourier transform of derivatives boils 
-    down to multiplication by simple polynomial functions in 
-    Fourier frequency variables
-    
-    with k_1 + ...+ k_n = k
-    
-    Fourier (d^k f/ d(x_1^k_1...dx_n^k_n))(w_1,...w_n) =
-     (2i\pi)^{k} w_1^{k_1}....w_n^{k_n}Fourier(f)
-    
-    Arguments:
-    ----------
-    dim: numpy array.
-        array of dimensions, at most 3.
-    order: numpy array or list.
-        derivative orders for each dimensions.
-    dtype: numpy.dtype
-        type of created array.
+    Derivative filter in Fourier domain.
 
-    Returns:
-    --------
-    D : numpy array.
-        Fourier filter for this derivative
-
-    Raises:
-    -------
-        ValueError if dimensions > 3 or if
-        len(dim) != len(order)
+    :param dim: array of dimensions, at most len 3.
+    :param order: list-like, derivative orders for each dimension.
+    :param dtype: numpy.dtype for created array.
+    :returns: D : numpy array. Fourier filter for this derivative
+    :raises: ValueError if dimensions > 3 or if len(dim) != len(order)
     """
-
-    ldim = len(dim)
+    l_dim = len(dim)
     lorder = len(order)
-    if ((ldim > 3 or lorder > 3) or (ldim != lorder)):
+    if (l_dim > 3 or lorder > 3) or (l_dim != lorder):
         raise ValueError('Incorrect dimensions or orders.')
 
-    if ldim == 1:
-        m = dim[0]//2
+    if l_dim == 1:
+        m = dim[0] // 2
         k = order[0]
-        omega = (np.hstack((range(m), range(-m, 0)))/(2.0*m))**k
-        D = omega*((2*I*PI)**k)
-    elif ldim == 2:
-        m = dim[0]//2
-        n = dim[1]//2
+        omega = (np.hstack((range(m), range(-m, 0))) / (2.0 * m)) ** k
+        D = omega * ((2 * _i * _pi) ** k)
+    elif l_dim == 2:
+        m = dim[0] // 2
+        n = dim[1] // 2
         k1, k2 = order
-        fact = (2*I*PI)**(k1 + k2)
-        omega1 = (np.hstack((range(m), range(-m, 0)))/(2.0*m))**k1
-        omega2 = (np.hstack((range(n), range(-n, 0)))/(2.0*n))**k2
-        D = (np.kron(omega1, omega2)*fact).reshape((2*m, 2*n))
+        fact = (2 * _i * _pi) ** (k1 + k2)
+        omega1 = (np.hstack((range(m), range(-m, 0))) / (2.0 * m)) ** k1
+        omega2 = (np.hstack((range(n), range(-n, 0))) / (2.0 * n)) ** k2
+        D = (np.kron(omega1, omega2) * fact).reshape((2 * m, 2 * n))
     else:
-        m = dim[0]//2
-        n = dim[1]//2
-        p = dim[2]//2
+        m = dim[0] // 2
+        n = dim[1] // 2
+        p = dim[2] // 2
         k1, k2, k3 = order
-        fact = (2*I*PI)**(k1 + k2 + k3)
-        omega1 = (np.hstack((range(m), range(-m, 0)))/(2.0*m))**k1
-        omega2 = (np.hstack((range(n), range(-n, 0)))/(2.0*n))**k2
-        omega3 = (np.hstack((range(p), range(-p, 0)))/(2.0*p))**k3
-        D = (np.kron(np.kron(omega1, omega2), omega3)
-             * fact).reshape((2*m, 2*n, 2*p))
+        fact = (2 * _i * _pi) ** (k1 + k2 + k3)
+        omega1 = (np.hstack((range(m), range(-m, 0))) / (2.0 * m)) ** k1
+        omega2 = (np.hstack((range(n), range(-n, 0))) / (2.0 * n)) ** k2
+        omega3 = (np.hstack((range(p), range(-p, 0))) / (2.0 * p)) ** k3
+        D = (np.kron(np.kron(omega1, omega2), omega3) * fact).reshape((2 * m, 2 * n, 2 * p))
 
     if dtype is not float:
         D = D.astype(dtype)
     return D
-# derivative_filter_fourier()
+
 
 
 def gaussian_filter_fourier_dim1(m, sigma, dtype=float):
     """
-    1 1D Gaussian filter in Fourier domain, size 2m
-    The Fourier Transform of a Gaussian of standard deviation sigma
-    is e^{-4pi^2 sigma^2 omega^2} (using signal processing definition of
-    the Fourier transform)
-    
-    Arguments:
-    ---------
-    m: int
-        half-array dimension
-    sigma: float
-        Gaussian standard deviation
-    dtype: numpy.dtype
-        base type of created array. default is float
-    Returns
-    -------
-    1D filter, with dtype set to complex.
+    Create a 1D Gaussian filter in the Fourier domain, size 2m.
+
+    :param int m: Half-array dimension.
+    :param float sigma: Gaussian standard deviation.
+    :param numpy.dtype dtype: Base type of the created array. Default is `float`.
+    :returns: 1D filter with dtype set to `complex`.
     """
-    G = np.zeros(2*m, dtype=complex)
+    G = np.zeros(2 * m, dtype=complex)
     if sigma == Inf:
         G[0] = 1.0
         return G
-    M = (np.arange(m+1, dtype=float)/(2*m))**2
-    G[:m+1] = np.exp(-M*2*(PI*sigma)**2)
+    M = (np.arange(m + 1, dtype=float) / (2 * m)) ** 2
+    G[:m + 1] = np.exp(-M * 2 * (_pi * sigma) ** 2)
     G[m:] = G[m:0:-1]
     if dtype is not float:
         G = G.astype(dtype)
@@ -371,202 +302,144 @@ def gaussian_filter_fourier_dim1(m, sigma, dtype=float):
 def gaussian_filter_fourier(dim, sigma, dtype=float):
     """
     Gaussian filter in Fourier space.
+
     Computes the Fourier transform of a Gaussian with given dimensions and
-    standard deviation
+    standard deviation.
 
-    Arguments:
-    ----------
-    dim : array-like
-        array of dimensions of the filter array.
-    sigma : float or array-like
-        standard deviation of the filter.
-        if float, isotropic filter. If array-like, it must have
-        same length as dim, specifying axis smoothings.
-    dtype: numpy.dtype
-        base type of created array. default is float
-    Returns:
-    --------
-    G : numpy array
-        the Fourier transform of the Gaussian kernel.
+    :param dim: Array of dimensions of the filter array.
+    :param sigma: Standard deviation of the filter. If sigma is float, teh filter is isotropic.
+        If sigma is array-like, it must have the same length as `dim`, specifying per-axis smoothing.
+    :param dtype: Base type of the created array. Default is `float`.
 
-    Raises:
-    ------_
-    ValueError if len(dim) > 3 or if sigma is array-like and 
-        len(sigma) differs from len(dim)
-    TypeError is sigma is neither float compatible scalar or array.
+    :returns: The Fourier transform of the Gaussian kernel.
+
+    :raises ValueError: If `len(dim) > 3` or if `sigma` is array-like and `len(sigma)` differs from `len(dim)`.
+    :raises TypeError: If `sigma` is neither a float-compatible scalar nor an array.
     """
     if len(dim) > 3:
         raise ValueError('Incorrect number of dimensions.')
 
     sigma = _to_float_array(sigma, len(dim))
-    if isinstance(sigma, Exception):
-        raise sigma
+    if isinstance(sigma, Exception): raise sigma
     # hopefully sigma is now a float numpy array with correct length
 
     if len(dim) == 1:
-        return gaussian_filter_fourier_dim1(dim[0]//2, sigma[0], dtype=dtype)
+        return gaussian_filter_fourier_dim1(dim[0] // 2, sigma[0], dtype=dtype)
     elif len(dim) == 2:
-        G0 = gaussian_filter_fourier_dim1(dim[0]//2, sigma[0], dtype=dtype)
-        G1 = gaussian_filter_fourier_dim1(dim[1]//2, sigma[1], dtype=dtype)
+        G0 = gaussian_filter_fourier_dim1(dim[0] // 2, sigma[0], dtype=dtype)
+        G1 = gaussian_filter_fourier_dim1(dim[1] // 2, sigma[1], dtype=dtype)
         G0.shape = (G0.size, 1)
         G1.shape = (1, G1.size)
         return np.kron(G0, G1)
     else:
-        G0 = gaussian_filter_fourier_dim1(dim[0]//2, sigma[0], dtype=dtype)
-        G1 = gaussian_filter_fourier_dim1(dim[1]//2, sigma[1], dtype=dtype)
-        G2 = gaussian_filter_fourier_dim1(dim[2]//2, sigma[2], dtype=dtype)
+        G0 = gaussian_filter_fourier_dim1(dim[0] // 2, sigma[0], dtype=dtype)
+        G1 = gaussian_filter_fourier_dim1(dim[1] // 2, sigma[1], dtype=dtype)
+        G2 = gaussian_filter_fourier_dim1(dim[2] // 2, sigma[2], dtype=dtype)
 
         G0.shape = (G0.size, 1, 1)
         G1.shape = (1, G1.size, 1)
         G2.shape = (1, 1, G2.size)
         return np.kron(np.kron(G0, G1), G2)
-
-
-# gaussian_filter_fourier()
-
+        
 
 def gss_remove_symmetry(f, vectorial):
     """
     Take the first half / quadrant / octant of f to get back to
     original function when the function f has been extended by
-    mirror symmetries so as to simulate Neumann BCs.
+    mirror symmetries to simulate Neumann BCs.
 
     Internal function to the scalespace module.
 
-    Arguments:
-    ----------
-    f : numpy array
-        symmetrised function.
-    vectorial: boolean
-        True means the last dimension is vectorial,
-        False means f is a scalar valued array.
+    :param f: Symmetrised function.
+    :param vectorial: True means the last dimension is vectorial, False means f is a scalar valued array.
 
-    Returns:
-    --------
-        unsymmetrised function.
+    :returns: de-symmetrised function.
     """
 
     if not vectorial:
         if len(f.shape) == 1:
             m = f.shape[0]
-            return f[:m//2]
+            return f[:m // 2]
         elif len(f.shape) == 2:
             m, n = f.shape
-            return f[:m//2, :n//2]
+            return f[:m // 2, :n // 2]
         else:
             m, n, p = f.shape
-            return f[:m//2, :n//2, :p//2]
+            return f[:m // 2, :n // 2, :p // 2]
     else:
         if len(f.shape) == 2:
             m = f.shape[1]
-            return f[:, m//2]
+            return f[:, m // 2]
         elif len(f.shape) == 3:
             m, n = f.shape[1:]
-            return f[:, :m//2, :n//2]
+            return f[:, :m // 2, :n // 2]
         else:
             m, n, p = f.shape[1:]
-            return f[:, m//2, n//2, p//2]
-# gss_remove_symmetry
+            return f[:, m // 2, n // 2, p // 2]
 
 
 def gss_apply_filter_fourier(f, H, vectorial):
     """
-    Applies the filter H to the image f in frequency domain, i.e.,
-    pointwise multiplies f bu H, taking care of the potentially
+    Applies the filter H to the image f in the frequency domain, i.e.,
+    point-wise multiplies f by H, taking care of the potentially
     vector-valued structure of f.
 
+    :param f: Function to be filtered, in the frequency domain.
+    :param H: Filter function, in the frequency domain. Should have the
+            same dimensions as f (except for f's last one if f is vectorial).
+    :param vectorial: True means the last dimension is vectorial,
+            False means f is a scalar valued array.
 
-    Arguments:
-    ----------
-    f : numpy array
-        function to be filtered, in frequency domain.
-    H : numpy array
-        filter function, in frequency domain. Should have
-        same dimensions as f (except for f's last one if
-        f is vectorial.)
-    vectorial: boolean
-        True means the last dimension is vectorial,
-        False means f is a scalar valued array.
-
-    Returns:
-    --------
-        Frequency domain filtering of f by H.
+    :returns: Frequency domain filtering of f by H.
     """
     if not vectorial:
-        ff = f*H
+        ff = f * H
     else:
         vdim = f.shape[0]
         ff = np.zeros(f.shape, dtype=complex)
         for v in range(vdim):
-            ff[v, :] = f[v, :]*H
+            ff[v, :] = f[v, :] * H
     return ff
 
 
-def gaussian_scalespace(f, sigma, order=None, vectorial=False, vectorial_first=False, reflected=True, gamma=0.0):
+def gaussian_scalespace(f, sigma, order=None, vectorial=False, vectorial_first=False, reflected=True):
     """
     Compute Gaussian scale space and Gaussian derivatives.
 
     This function computes Gaussian scale-space / Gaussian derivatives of an
-    array, that can been seen as a scalar or vector valued function. Maximum
+    array, that can be seen as a scalar or vector valued function. Maximum
     dimensions are 3 (not counting the vectorial one).
 
-    Arguments:
-    ----------
-    f : numpy array
-        input function, its dimensions must be 1, 2, or 3, possibly including a
-         vectorial one i.e. adding an extra dimension (thus up to 4).
-         f must have dtype 'float' or 'float32'. 
-    sigma : float or array like
-        standard deviation of the Gaussian kernel.
-        if array like, the length of sigma must match the image dimension (1, 2 or 3)
-        and it corresponds to standard deviations applied per axis.
-    order : array-like, optional
-        each line corresponds to a particular derivative to be computed. If
-        array of order of derivatives of size (m,dim(f)). If not given, zero
-        order derivative, i.e. plain scale-space.
-    vectorial : boolean, optional
-        specifies whether the first/last dimension should be considered as
-        vectorial (i.e. f should be a vector valued function).
-    vectorial_first: boolean
-        True means that the vectorial dimension is the first one,
-        False (default) means the last one.
-    reflected: boolean
-        True: mirror symmetries the function to mimic Neumann BCs
-        False: do nothing, i.e., assume standard toric BCs.
-    gamma: float
-        scale normalisation factor: each k-th order derivative at scale sigma is
-        multiplied by sigma^(k.gamma). `gamma` should be in [0,1], with 0 value
-        meaning no scale normalisation. Note that in Lindeberg's work, t = sigma^2
-        is normally used, so the scale normalisation factor is of the form t^{k.gamma/2).
+    :param f: Input function, its dimensions must be 1, 2, or 3, possibly including a
+              vectorial one i.e. adding an extra dimension (thus up to 4).
+              f must have dtype 'float' or 'float32'.
+    :param sigma: Standard deviation of the Gaussian kernel.
+                  If array-like, the length of sigma must match the image dimension (1, 2 or 3)
+                  and it corresponds to standard deviations applied per axis.
+    :param order: Array-like, optional. Each line corresponds to a particular derivative to be computed.
+                  If array of order of derivatives of size (m, dim(f)). If not given, zero
+                  order derivative, i.e., plain scale-space.
+    :param vectorial: Boolean, optional. Specifies whether the first/last dimension should be considered as
+                      vectorial (i.e., f should be a vector valued function).
+    :param vectorial_first: Boolean. True means that the vectorial dimension is the first one,
+                            False (default) means the last one.
+    :param reflected: Boolean. True: mirror symmetries the function to mimic Neumann BCs.
+                      False: do nothing, i.e., assume standard toric BCs.
 
-    Returns:
-    --------
-    res : float(32) numpy or list of float numpy arrays.
-        Gaussian scale-space or list of Gaussian derivatives, depending on
-        order
+    :returns: Gaussian scale-space or list of Gaussian derivatives, depending on order.
+    :rtype: float(32) numpy or list of float numpy arrays.
 
-    Raise:
-    ------
-    ValueError
-        if some dimensions are incorrect or mismatch.
-    TypeError:
-        if non None order is not convertible to numpy array
-
+    :raises ValueError: If some dimensions are incorrect or mismatch.
+    :raises TypeError: If non None order is not convertible to numpy array.
 
     Example:
     --------
-        We compute the Laplacian of Gaussian of a 2D or 3D image f, non vectorial, with
-        reflected boundary conditions:
-
-        # 2D image
-        fxx, fyy = gaussian_scalespace(f, sigma, order=[[2,0],[0,2]])
-        LoGf = fxx + fyy
-        # the same, but work also for 3D
-        from operator import add
-        LoGf = reduce(add, gaussian_scalespace(f, sigma, order=2*np.eye(f.ndim)))
-
+    We compute the Laplacian of Gaussian of a 2D or 3D image f, non vectorial, with
+    reflected boundary conditions
+        >>> from operator import add
+        >>> LoGf = reduce(add, gaussian_scalespace(f, sigma, order=2*np.eye(f.ndim)))
+        >>>
     """
-
     # check if order is array-like when not None
     if order is not None:
         try:
@@ -575,23 +448,22 @@ def gaussian_scalespace(f, sigma, order=None, vectorial=False, vectorial_first=F
             raise TypeError('order parameter is not array-like.')
 
     # check dimensions of f and order.
-    fdim = len(f.shape) if not vectorial else len(f.shape)-1
-    if fdim > 3:
+    f_dim = f.ndim if not vectorial else f.ndim - 1
+    if f_dim > 3:
         raise ValueError('Bad dimension: dimension of f > 3.')
     if order is not None:
         if ((len(order.shape) == 1) or
-            (len(order.shape) == 2 and order.shape[1] != fdim) or
+                (len(order.shape) == 2 and order.shape[1] != f_dim) or
                 (len(order.shape) > 2)):
             raise ValueError('Bad dimensions: dimensions mismatch.')
 
-    dim = f.shape if not vectorial else f.shape[1:
-                                                ] if vectorial_first else f.shape[:-1]
+    dim = f.shape if not vectorial else f.shape[1:] if vectorial_first else f.shape[:-1]
 
     # if derivative order was not specified, set to 0
     # otherwise be sure that order.shape has the form
-    # (m,dimf)
+    # (m, f_dim)
     if order is None:
-        order = np.zeros((1, fdim))
+        order = np.zeros((1, f_dim))
     else:
         if len(order.shape) == 1:
             order.shape = (1, order.shape[0])
@@ -603,20 +475,26 @@ def gaussian_scalespace(f, sigma, order=None, vectorial=False, vectorial_first=F
     # want to touch that part, so if at least one of the dimensions
     # fails to be even, raise an exception.
     if not reflected:
-        if any((dim[i] % 2) == True for i in range(len(dim))):
-            raise ValueError(
-                "(non-vectorial) dimensions of f must be even when reflected=False.")
+        # original code: any seems to return a generator, converted to True,
+        # as non-zero. Mysterious bug in this expression?
+        # works properly inside a standard ipython:
+        # if any(dim[i] % 2  for i in range(len(dim))):
+        # 
+        # Will it fix it?
+        odd_dim = [dim[i] % 2 for i in range(len(dim))]
+        if any(odd_dim):
+            raise ValueError("(non-vectorial) dimensions of f must be even when reflected=False.")
 
     # prepare data. If data is vectorial, the last dimension is rolled
     # to the first, so that Fourier transform will deal with contiguous
     # slices of data.
     if vectorial and not vectorial_first:
-        f = np.rollaxis(f, fdim).copy()
+        f = np.rollaxis(f, f_dim).copy()
 
     # Complexify f and applies mirroring symmetry if reflected == True
-    ffdtype = complex if f.dtype is float else 'complex64'
+    ff_dtype = complex if f.dtype is float else 'complex64'
 
-    cf = f.astype(ffdtype)
+    cf = f.astype(ff_dtype)
     if reflected:
         cf = nbc_fourier(cf, vectorial)
         dim = cf.shape if not vectorial else cf.shape[1:]
@@ -625,13 +503,13 @@ def gaussian_scalespace(f, sigma, order=None, vectorial=False, vectorial_first=F
     fcf = gss_fft(cf, vectorial)
 
     # Create the Fourier Gaussian filter
-    G = gaussian_filter_fourier(dim, sigma, dtype=ffdtype)
+    G = gaussian_filter_fourier(dim, sigma, dtype=ff_dtype)
 
     # Compute the different Fourier derivatives filters and apply them
     res = []
     for i in range(nb_filters):
-        D = derivative_filter_fourier(dim, order[i, :], dtype=ffdtype)
-        res.append(gss_apply_filter_fourier(fcf, G*D, vectorial))
+        D = derivative_filter_fourier(dim, order[i, :], dtype=ff_dtype)
+        res.append(gss_apply_filter_fourier(fcf, G * D, vectorial))
 
     # Fourier transform back (and get real part)
     for i in range(nb_filters):
@@ -647,61 +525,38 @@ def gaussian_scalespace(f, sigma, order=None, vectorial=False, vectorial_first=F
         if vectorial and not vectorial_first:
             res[i] = np.rollaxis(res[i], 0, len(res[i].shape)).copy()
 
-    # apply scale normalisation if gamma != 0.0
-    if gamma != 0.0:
-        for i in range(nb_filters):
-            total_derivative_order = order[i].sum()
-            normalisation_factor = pow(sigma, total_derivative_order*gamma)
-            res[i] *= normalisation_factor
-
     if nb_filters == 1:
         return res[0]
     else:
         return res
-# gaussian_scalespace()
 
 
-# TODO this should be called by gaussian_scalespace()?
 def Fourier_gaussian_scalespace(f, sigma, order=None, vectorial=False):
     """
-    Compute Gaussian scalespace and Gaussian derivatives in Fourier
+    Compute Gaussian scale-space and Gaussian derivatives in Fourier
     domain, assuming that f is already in Fourier domain, a la Jon.
 
-    Arguments:
-    ----------
-    f : numpy array
-        Fourier transform of the input function, its dimensions must
-        be 1, 2, or 3, possibly including a vectorial one i.e. adding
-        an extra dimension (thus up to 4). In the case where
-        vectorial == True, the vectorial dimension is assumed to be the
-        first one. This has to do with coding of the other operations,
-        Fourier-Transform and filtering ones.
-    sigma: float or array-like.
-        standard deviation of the Gaussian kernel.
-        if array like, the length of sigma must match the image dimension (1, 2 or 3)
-        and it corresponds to standard deviations applied per axis.
-    order: array-like, optional.
-        each line corresponds to a particular derivative to be computed. If
-        array of order of derivatives of size (m,dim(f)). If not given, zero
-        order derivative, i.e. plain scale-space.
-    vectorial : boolean, optional
-        specifies whether the first dimension should be considered as
-        vectorial (i.e. f should be a vector valued function).
+    :param f: Fourier transform of the input function, its dimensions must
+              be 1, 2, or 3, possibly including a vectorial one i.e., adding
+              an extra dimension (thus up to 4). In the case where
+              vectorial == True, the vectorial dimension is assumed to be the
+              first one. This has to do with coding of the other operations,
+              Fourier-Transform and filtering ones.
+    :param sigma: Standard deviation of the Gaussian kernel.
+                  If array-like, the length of sigma must match the image dimension (1, 2, or 3)
+                  and it corresponds to standard deviations applied per axis.
+    :param order: Array-like, optional. Each line corresponds to a particular derivative to be computed.
+                  If array of order of derivatives of size (m, dim(f)). If not given, zero
+                  order derivative, i.e., plain scale-space.
+    :param vectorial: Boolean, optional. Specifies whether the first dimension should be considered as
+                      vectorial (i.e., f should be a vector valued function).
 
-    Returns:
-    --------
-    res : complex numpy or list of float numpy arrays.
-        Gaussian scale-space or list of Gaussian derivatives, depending on
-        order, in Fourier domain.
+    :returns: Gaussian scale-space or list of Gaussian derivatives, depending on order, in Fourier domain.
+    :rtype: Complex numpy array or list of float numpy arrays.
 
-    Raise:
-    ------
-    ValueError
-        if some dimensions are incorrect or mismatch.
-    TypeError:
-        if non None order is not convertible to numpy array
+    :raises ValueError: If some dimensions are incorrect or mismatch.
+    :raises TypeError: If non None order is not convertible to numpy array.
     """
-
     # check if order is array-like when not None
     if order is not None:
         try:
@@ -710,12 +565,12 @@ def Fourier_gaussian_scalespace(f, sigma, order=None, vectorial=False):
             raise TypeError('order parameter is not array-like.')
 
     # check dimensions of f and order.
-    fdim = len(f.shape) if not vectorial else len(f.shape)-1
+    fdim = len(f.shape) if not vectorial else len(f.shape) - 1
     if fdim > 3:
         raise ValueError('Bad dimension: dimension of f > 3.')
     if order is not None:
         if ((len(order.shape) == 1) or
-            (len(order.shape) == 2 and order.shape[1] != fdim) or
+                (len(order.shape) == 2 and order.shape[1] != fdim) or
                 (len(order.shape) > 2)):
             raise ValueError('Bad dimensions: dimensions mismatch.')
 
@@ -746,69 +601,54 @@ def Fourier_gaussian_scalespace(f, sigma, order=None, vectorial=False):
     res = []
     for i in range(nb_filters):
         D = derivative_filter_fourier(dim, order[i, :], dtype=f.dtype)
-        res.append(gss_apply_filter_fourier(f, G*D, vectorial))
+        res.append(gss_apply_filter_fourier(f, G * D, vectorial))
 
     if nb_filters == 1:
         return res[0]
     else:
         return res
-# Fourier_gaussian_scalespace()
 
 
-def structure_tensor(f, innerscale, outerscale, vectorial=False, vectorial_first=False, reflected=True):
+def structure_tensor(f, inner_scale, outer_scale, vectorial=False, vectorial_first=False, reflected=True):
     """
     This is an illustration of the use of Gaussian Scale-space to 
-    compute classical structure tensor of an image / volume.
-    As is is of usage, the structure tensor of a vectorial image is 
+    compute classical structure tensor of an image/volume.
+    As is of usage, the structure tensor of a vectorial image is
     obtained by summing the tensors of each scalar field.
 
-    Arguments:
-    ----------
-    f: numpy float (like) array
-        array of dim 1, 2, 3 or 4. 1 is scalar, while 4 is always vectorial.
-    innerscale: float or float array-like
-        inner scale for computation of derivatives. If float array-like, its length 
-        must match f (non-vectorial) dimensions. This would be typically used to accomodate
-        non square (resp. cubic) pixels (resp. voxels).
-    outerscale: float or float array-like
-        outer scale for smoothing of structure field. If float array-like, its length 
-        must match f (non-vectorial) dimensions. This would be typically used to accomodate
-        non square (resp. cubic) pixels (resp. voxels).
+    :param f: Array of dim 1, 2, 3, or 4. 1 is scalar, while 4 is always vectorial.
+    :param inner_scale: Inner scale for computation of derivatives. If float array-like, its length
+                        must match f (non-vectorial) dimensions. This would be typically used to accommodate
+                        non-square (resp. cubic) pixels (resp. voxels).
+    :param outer_scale: Outer scale for smoothing of structure field. If float array-like, its length
+                        must match f (non-vectorial) dimensions. This would be typically used to accommodate
+                        non-square (resp. cubic) pixels (resp. voxels).
+    :param vectorial: True means that the data is vectorial. The last dimension if vectorial_first is False
+                      or the first one if vectorial_first is True.
+                      When f.ndim is in {1, 4}, this is ignored.
+    :param vectorial_first: True means first dim encodes the vectorial values,
+                            False means last dim encodes the vectorial values, whenever it makes sense.
+    :param reflected: If True, reflected boundary conditions will be applied.
+                      If False, standard periodic are used (needs non-vectorial dimensions to be even).
 
-    # Extra parameters passed to gaussian_scale_space():
-    # --------------------------------------------------
-    vectorial: bool
-        True means that the data is vectorial. The last dimension if vectorial_first is False
-        or the first one if vectorial_first is True
-        when f.ndim \in {1, 4} this is ignored.
-    vectorial_first: bool
-        True means first dim encodes the vectorial values,
-        False means last dim encodes the vectorial values, whenever it makes sense
-    reflected: bool
-        if True: reflected boundary conditions will be applied.
-        if False, standard periodic are used (needs non vectorial dimensions to be even)
-
-    Returns:
-    --------
-    st: numpy float array
-        structure tensor field. Each entry is a compressed symmetric matrix, only upper diagonal 
-        saved, in standard order (line concatenation)
-        Dimensions. ignoring the potential vectorial dimension of f (are marginalized in st calculations):
-            f.ndim=1, f.shape = (m), st.shape = (m)
-            f.ndim=2, f.shape = (m, n), st.shape = (m, n, 3)
-            f.ndim=3, f.shape = (m, n, p), st.shape = (m, n, p, 6)
+    :returns: Structure tensor field. Each entry is a compressed symmetric matrix, only upper diagonal
+              saved, in standard order (line concatenation).
+              Dimensions, ignoring the potential vectorial dimension of f (are marginalized in st calculations):
+              - f.ndim=1, f.shape = (m), st.shape = (m)
+              - f.ndim=2, f.shape = (m, n), st.shape = (m, n, 3)
+              - f.ndim=3, f.shape = (m, n, p), st.shape = (m, n, p, 6)
+    :rtype: numpy float array
     """
 
     if (f.ndim <= 0) or (f.ndim > 4):
-        raise TypeError(
-            'Only dim1 to 3, with maybe vectorial content images can be used.')
-    n = f.ndim if not vectorial else f.ndim-1
+        raise TypeError('Only dim1 to 3, with maybe vectorial content images can be used.')
+    n = f.ndim if not vectorial else f.ndim - 1
     if n == 0:
         raise ValueError('A dimension 1 array cannot be vectorial.')
     elif n == 4:
         raise ValueError('A dimension 4 array must be vectorial.')
 
-    fders = gaussian_scalespace(f, innerscale, order=np.eye(n), vectorial=vectorial,
+    fders = gaussian_scalespace(f, inner_scale, order=np.eye(n), vectorial=vectorial,
                                 vectorial_first=vectorial_first, reflected=reflected)
     if type(fders) == np.ndarray:
         fders = [fders]
@@ -819,78 +659,62 @@ def structure_tensor(f, innerscale, outerscale, vectorial=False, vectorial_first
 
     if n == 1:
         fx, = fders
-        st = gaussian_scalespace(
-            fx, outerscale, vectorial=False, reflected=reflected)
+        st = gaussian_scalespace(fx, outer_scale, vectorial=False, reflected=reflected)
     elif n == 2:
         fx, fy = fders
         st = np.zeros(fx.shape + (3,))
-        st[:, :, 0] = fx**2
-        st[:, :, 1] = fx*fy
-        st[:, :, 2] = fy**2
-        st = gaussian_scalespace(
-            st, outerscale, vectorial=True, vectorial_first=False, reflected=reflected)
+        st[:, :, 0] = fx ** 2
+        st[:, :, 1] = fx * fy
+        st[:, :, 2] = fy ** 2
+        st = gaussian_scalespace(st, outer_scale, vectorial=True, vectorial_first=False, reflected=reflected)
     else:
         fx, fy, fz = fders
         st = np.zeros(fx.shape + (6,))
-        st[:, :, :, 0] = fx**2
-        st[:, :, :, 1] = fx*fy
-        st[:, :, :, 2] = fx*fz
-        st[:, :, :, 3] = fy**2
-        st[:, :, :, 4] = fy*fz
-        st[:, :, :, 5] = fz**2
-        st = gaussian_scalespace(
-            st, outerscale, vectorial=True, vectorial_first=False, reflected=reflected)
+        st[:, :, :, 0] = fx ** 2
+        st[:, :, :, 1] = fx * fy
+        st[:, :, :, 2] = fx * fz
+        st[:, :, :, 3] = fy ** 2
+        st[:, :, :, 4] = fy * fz
+        st[:, :, :, 5] = fz ** 2
+        st = gaussian_scalespace(st, outer_scale, vectorial=True, vectorial_first=False, reflected=reflected)
     return st
+
 
 
 def hessian_of_gaussian(f, sigma, vectorial=False, vectorial_first=False, reflected=True, marginalize=False):
     """
     Hessian of Gaussian for a signal, image, or volume. 
+    
+    :param f: Array of dim 1, 2, 3, or 4. Dim 1 is always scalar while dim 4 is always vectorial.
+    :param sigma: Gaussian scale for evaluation of derivatives. If float array-like, its length
+                  must match f (non-vectorial) dimensions. This would be typically used to
+                  accommodate non-square (resp. cubic) pixels (resp. voxels).
+    :param vectorial: True means that the data is vectorial. The last dimension if
+                  vectorial_first is False or the first one if vectorial_first is True.
+                  When f.ndim is in {1, 4}, this is ignored.
+    :param vectorial_first: True means first dim encodes the vectorial values,
+                  False means last dim encodes the vectorial values, whenever it makes sense.
+    :param reflected: If True, reflected boundary conditions will be applied.
+                  If False, standard periodic are used (needs non-vectorial dimensions to be even).
+    :param marginalize: If True and vectorial is True, returns Hessian per vectorial dimensions.
+                  If False, sum result over vectorial dimensions.
 
-    Arguments:
-    ----------
-    f : float numpy array
-        array of dim 1, 2, 3, or 4. dim 1 is always scalar while dim 4 is always vectorial.
-    sigma: float or array of floats-like
-        Gaussian scale for evaluation of derivatives. If float array-like, its length 
-        must match f (non-vectorial) dimensions. This would be typically used to accomodate
-        non square (resp. cubic) pixels (resp. voxels).
-    vectorial: bool
-        True means that the data is vectorial. The last dimension if vectorial_first is False
-        or the first one if vectorial_first is True
-        when f.ndim \in {1, 4} this is ignored.
-    vectorial_first: bool
-        True means first dim encodes the vectorial values,
-        False means last dim encodes the vectorial values, whenever it makes sense
-    reflected: bool
-        if True: reflected boundary conditions will be applied.
-        if False, standard periodic are used (needs non vectorial dimensions to be even)
-    marginalize: bool
-        if True and vectorial is True, that returns hessian per vectorial dimensions
-        if False, sum result over vectorial dimensions.
+    :returns: Hessian matrix field. Each entry is a compressed symmetric matrix, only upper diagonal
+              saved, in standard order (line concatenation).
+              Dimensions:
+              - Vectorial non-marginalized or scalar f:
+                - f.shape if f is dim 1
+                - f.shape + (3,) if f has dim 2
+                - f.shape + (6,) if f has dim 3
+              - Vectorial, marginalized: same as above but without vectorial dimensions.
+    :rtype: numpy float array
 
-    Returns:
-    --------
-    hf: numpy float array
-        Hessian matrix field. Each entry is a compressed symmetric matrix, only upper diagonal 
-        saved, in standard order (line concatenation)
-        Dimensions: 
-        + vectorial non marginalized or scalar f:
-            f.shape if f is dim 1 
-            f.shape + (3,) if f has dim 2
-            f.shape + (6,) if f has dim 3
-        + vectorial, marginalized: same as above but without vectorial dimensions.
-
-    Raises:
-    -------
-    ValueError, TypeError.
-
-
+    :raises ValueError: If dimensions are incorrect or mismatch.
+    :raises TypeError: If input types are incorrect.
     """
     if (f.ndim <= 0) or (f.ndim > 4):
-        raise TypeError(
-            'Only dim1 to 3, with maybe vectorial content images can be used.')
-    n = f.ndim if vectorial else f.ndim-1
+        raise TypeError('Only dim1 to 3, with maybe vectorial content images can be used.')
+    n = f.ndim if vectorial else f.ndim - 1
     if n == 0:
         raise ValueError('A dimension 1 array cannot be vectorial.')
     elif n == 4:
@@ -901,8 +725,7 @@ def hessian_of_gaussian(f, sigma, vectorial=False, vectorial_first=False, reflec
     elif n == 2:
         order = ((2, 0), (1, 1), (0, 2))
     else:
-        order = ((2, 0, 0), (1, 1, 0), (1, 0, 1),
-                 (0, 2, 0), (0, 1, 1), (0, 0, 2))
+        order = ((2, 0, 0), (1, 1, 0), (1, 0, 1), (0, 2, 0), (0, 1, 1), (0, 0, 2))
     ders = gaussian_scalespace(f, sigma, order=order, vectorial=vectorial,
                                vectorial_first=vectorial_first, reflected=reflected)
 
@@ -971,47 +794,39 @@ def hessian_of_gaussian(f, sigma, vectorial=False, vectorial_first=False, reflec
                 hf[:, :, :, 5] = fzz.sum(axis=axis)
 
     return hf
-# hessian_of_gaussian()
-
 
 def determinant_symmetric_field(f, vectorial=False, vectorial_first=False):
     """
-    determinant_symmetric_field is not using Gaussian scale space, but supposed to be 
-    applied to fields obtained by structure_tensor and / or hessian_of_gaussian. This 
-    is why it may be convenient to have this function here, and why this imposes 
+    `determinant_symmetric_field` is not using Gaussian scale space but is supposed to be
+    applied to fields obtained by `structure_tensor` and/or `hessian_of_gaussian`. This
+    is why it may be convenient to have this function here, and why this imposes
     restrictions on dimensions.
 
-    Argument:
-    ---------
-    f : float(32) numpy array
-        array of dim 1 to 5, though 5 is a bad idea.
-        * for the non vectorial case, i.e., vectorial = False (always true when ndim == 1):
-          - f.ndim == 1: the function is the identity, it returns a reference to its 
-            argument. Note that vectorial_first == True triggers a ValueError exception.
-          - f.ndim == 2: cannot happen. Triggers a ValueError exception.
-          - f.ndim == 3: this must be (m,n,3), else triggers a ValueError exception.
-            Returns a (m,n) field.
-          - f.ndim == 4: this must be (m,n,p,6), else triggers a ValueError exception.
-            Returns a (m,n,p) field.
-          - f.ndim == 5: cannot happen, it will trigger a ValueError exception.
-        * for the vectorial case, i.e., vectorial == True
-          - f.ndim == 1: cannot happen. Triggers ValueError exception.
-          - f.ndim == 2: vectorial_first ignored, the function is the identity, it 
-            returns a reference to its argument.
-          - f.ndim == 3: cannot happen. Triggers ValueError exception.
-          - f.ndim == 4: expects shape (m,n,v,3) if vectorial_first or (v,m,n,3) otherwise.
-            Returns a (m,n,v) or (v,m,n) field.
-          - f.ndim == 5: expects shape (m,n,p,v,6) if vectorial_first or (v,m,n,p,6) otherwise.
-            Returns a (m,n,p, v) or (v,m,n) field.
-    vectorial: bool
-        True indicates that f has a vectorial component, the last (default, vectorial_first = False)
-        or first (when vectorial_first == True).
-    vectorial_first: bool
-        See above.
+    :param f: Array of dim 1 to 5, though 5 is a bad idea.
+              For the non-vectorial case, i.e., vectorial = False (always true when ndim == 1):
+              - f.ndim == 1: The function is the identity, it returns a reference to its
+                argument. Note that vectorial_first == True triggers a ValueError exception.
+              - f.ndim == 2: Cannot happen. Triggers a ValueError exception.
+              - f.ndim == 3: This must be (m, n, 3), else triggers a ValueError exception.
+                Returns a (m, n) field.
+              - f.ndim == 4: This must be (m, n, p, 6), else triggers a ValueError exception.
+                Returns a (m, n, p) field.
+              - f.ndim == 5: Cannot happen, it will trigger a ValueError exception.
+              For the vectorial case, i.e., vectorial == True:
+              - f.ndim == 1: Cannot happen. Triggers ValueError exception.
+              - f.ndim == 2: Vectorial_first ignored, the function is the identity, it
+                returns a reference to its argument.
+              - f.ndim == 3: Cannot happen. Triggers ValueError exception.
+              - f.ndim == 4: Expects shape (m, n, v, 3) if vectorial_first or (v, m, n, 3) otherwise.
+                Returns a (m, n, v) or (v, m, n) field.
+              - f.ndim == 5: Expects shape (m, n, p, v, 6) if vectorial_first or (v, m, n, p, 6) otherwise.
+                Returns a (m, n, p, v) or (v, m, n) field.
+    :param vectorial: True indicates that f has a vectorial component, the last (default, vectorial_first = False)
+                      or first (when vectorial_first == True).
+    :param vectorial_first: See above.
 
-    Returns:
-    --------
-        D : the determinant field.
+    :returns: The determinant field.
+    :rtype: numpy array
     """
     if (f.ndim <= 0) or (f.ndim > 5):
         raise TypeError('dimension must be in range {1..5}.')
@@ -1023,19 +838,18 @@ def determinant_symmetric_field(f, vectorial=False, vectorial_first=False):
             raise ValueError('Argument cannot be a symmetric matrix field.')
         if n == 3:
             if f.shape[-1] != 3:
-                raise ValueError(
-                    'Argument cannot be a symmetric matrix field.')
-            return f[:, :, 0]*f[:, :, 2] - f[:, :, 1]**2
+                raise ValueError('Argument cannot be a symmetric matrix field.')
+            return f[:, :, 0] * f[:, :, 2] - f[:, :, 1] ** 2
         if n == 4:
             if f.shape[-1] != 6:
-                raise ValueError(
-                    'Argument cannot be a symmetric matrix field.')
-            return f[:, :, :, 0]*f[:, :, :, 3]*f[:, :, :, 5] + 2*f[:, :, :, 1]*f[:, :, :, 2]*f[:, :, :, 4] \
-                - f[:, :, :, 1]**2*f[:, :, :, 5] - f[:, :, :, 2]**2 * \
-                f[:, :, :, 3] - f[:, :, :, 4]**2*f[:, :, :, 0]
+                raise ValueError('Argument cannot be a symmetric matrix field.')
+            return f[:, :, :, 0] * f[:, :, :, 3] * f[:, :, :, 5] + \
+                2 * f[:, :, :, 1] * f[:, :, :, 2] * f[:, :, :, 4] - \
+                f[:, :, :, 1] ** 2 * f[:, :, :, 5] - \
+                f[:, :, :, 2] ** 2 * f[:, :, :, 3] - \
+                f[:, :, :, 4] ** 2 * f[:, :, :, 0]
         if n == 5:
-            raise ValueError(
-                'Argument cannot be a 3D "scalar" symmetric matrix field.')
+            raise ValueError('Argument cannot be a 3D "scalar" symmetric matrix field.')
     else:
         if n == 1:
             raise ValueError('Argument cannot be a symmetric matrix field.')
@@ -1045,56 +859,49 @@ def determinant_symmetric_field(f, vectorial=False, vectorial_first=False):
             raise ValueError('Argument cannot be a symmetric matrix field.')
         if n == 4:
             if f.shape[-1] != 3:
-                raise ValueError(
-                    'Argument cannot be a symmetric matrix field.')
-            return f[:, :, :, 0]*f[:, :, :, 2] - f[:, :, :, 1]**2
+                raise ValueError('Argument cannot be a symmetric matrix field.')
+            return f[:, :, :, 0] * f[:, :, :, 2] - f[:, :, :, 1] ** 2
         if n == 5:
             if f.shape[-1] != 6:
-                raise ValueError(
-                    'Argument cannot be a symmetric matrix field.')
-            return f[:, :, :, :, 0]*f[:, :, :, :, 3]*f[:, :, :, :, 5] + 2*f[:, :, :, :, 1]*f[:, :, :, :, 2]*f[:, :, :, :, 4] \
-                - f[:, :, :, :, 1]**2*f[:, :, :, :, 5] - f[:, :, :, :, 2]**2 * \
-                f[:, :, :, :, 3] - f[:, :, :, :, 4]**2*f[:, :, :, :, 0]
-
+                raise ValueError('Argument cannot be a symmetric matrix field.')
+            return f[:, :, :, :, 0] * f[:, :, :, :, 3] * f[:, :, :, :, 5] + \
+                2 * f[:, :, :, :, 1] * f[:, :, :, :, 2] * f[:, :, :, :,4] - \
+                f[:, :, :, :, 1] ** 2 * f[:, :, :, :, 5] - \
+                f[:, :, :, :, 2] ** 2 * f[:, :, :, :, 3] - \
+                f[:, :, :, :, 4] ** 2 * f[:, :, :, :, 0]
 
 def trace_symmetric_field(f, vectorial=False, vectorial_first=False):
     """
-    trace_symmetric_field is not using Gaussian scale space, but supposed to be 
-    applied to fields obtained by structure_tensor and / or hessian_of_gaussian. This 
-    is why it may be convenient to have this function here, and why this imposes 
+    `trace_symmetric_field` is not using Gaussian scale space but is supposed to be
+    applied to fields obtained by `structure_tensor` and/or `hessian_of_gaussian`. This
+    is why it may be convenient to have this function here, and why this imposes
     restrictions on dimensions.
 
-    Argument:
-    ---------
-    f : float(32) numpy array
-        array of dim 1 to 5, though 5 is a bad idea.
-        * for the non vectorial case, i.e., vectorial = False (always true when ndim == 1):
-          - f.ndim == 1: the function is the identity, it returns a reference to its 
-            argument. Note that vectorial_first == True triggers a ValueError exception.
-          - f.ndim == 2: cannot happen. Triggers a ValueError exception.
-          - f.ndim == 3: this must be (m,n,3), else triggers a ValueError exception.
-            Returns a (m,n) field.
-          - f.ndim == 4: this must be (m,n,p,6), else triggers a ValueError exception.
-            Returns a (m,n,p) field.
-          - f.ndim == 5: cannot happen, it will trigger a ValueError exception.
-        * for the vectorial case, i.e., vectorial == True
-          - f.ndim == 1: cannot happen. Triggers ValueError exception.
-          - f.ndim == 2: vectorial_first ignored, the function is the identity, it 
-            returns a reference to its argument.
-          - f.ndim == 3: cannot happen. Triggers ValueError exception.
-          - f.ndim == 4: expects shape (m,n,v,3) if vectorial_first or (v,m,n,3) otherwise.
-            Returns a (m,n,v) or (v,m,n) field.
-          - f.ndim == 5: expects shape (m,n,p,v,6) if vectorial_first or (v,m,n,p,6) otherwise.
-            Returns a (m,n,p, v) or (v,m,n) field.
-    vectorial: bool
-        True indicates that f has a vectorial component, the last (default, vectorial_first = False)
-        or first (when vectorial_first == True).
-    vectorial_first: bool
-        See above.
+    :param f: Array of dim 1 to 5, though 5 is a bad idea.
+              For the non-vectorial case, i.e., vectorial = False (always true when ndim == 1):
+              - f.ndim == 1: The function is the identity, it returns a reference to its
+                argument. Note that vectorial_first == True triggers a ValueError exception.
+              - f.ndim == 2: Cannot happen. Triggers a ValueError exception.
+              - f.ndim == 3: This must be (m, n, 3), else triggers a ValueError exception.
+                Returns a (m, n) field.
+              - f.ndim == 4: This must be (m, n, p, 6), else triggers a ValueError exception.
+                Returns a (m, n, p) field.
+              - f.ndim == 5: Cannot happen, it will trigger a ValueError exception.
+              For the vectorial case, i.e., vectorial == True:
+              - f.ndim == 1: Cannot happen. Triggers ValueError exception.
+              - f.ndim == 2: Vectorial_first ignored, the function is the identity, it
+                returns a reference to its argument.
+              - f.ndim == 3: Cannot happen. Triggers ValueError exception.
+              - f.ndim == 4: Expects shape (m, n, v, 3) if vectorial_first or (v, m, n, 3) otherwise.
+                Returns a (m, n, v) or (v, m, n) field.
+              - f.ndim == 5: Expects shape (m, n, p, v, 6) if vectorial_first or (v, m, n, p, 6) otherwise.
+                Returns a (m, n, p, v) or (v, m, n) field.
+    :param vectorial: True indicates that f has a vectorial component, the last (default, vectorial_first = False)
+                      or first (when vectorial_first == True).
+    :param vectorial_first: See above.
 
-    Returns:
-    --------
-        T : the trace field.
+    :returns: The trace field.
+    :rtype: numpy array
     """
     if (f.ndim <= 0) or (f.ndim > 5):
         raise TypeError('dimension must be in range {1..5}.')
@@ -1106,17 +913,14 @@ def trace_symmetric_field(f, vectorial=False, vectorial_first=False):
             raise ValueError('Argument cannot be a symmetric matrix field.')
         if n == 3:
             if f.shape[-1] != 3:
-                raise ValueError(
-                    'Argument cannot be a symmetric matrix field.')
+                raise ValueError('Argument cannot be a symmetric matrix field.')
             return f[:, :, 0] + f[:, :, 2]
         if n == 4:
             if f.shape[-1] != 6:
-                raise ValueError(
-                    'Argument cannot be a symmetric matrix field.')
+                raise ValueError('Argument cannot be a symmetric matrix field.')
             return f[:, :, :, 0] + f[:, :, :, 3] + f[:, :, :, 5]
         if n == 5:
-            raise ValueError(
-                'Argument cannot be a 3D "scalar" symmetric matrix field.')
+            raise ValueError('Argument cannot be a 3D "scalar" symmetric matrix field.')
     else:
         if n == 1:
             raise ValueError('Argument cannot be a symmetric matrix field.')
@@ -1126,97 +930,74 @@ def trace_symmetric_field(f, vectorial=False, vectorial_first=False):
             raise ValueError('Argument cannot be a symmetric matrix field.')
         if n == 4:
             if f.shape[-1] != 3:
-                raise ValueError(
-                    'Argument cannot be a symmetric matrix field.')
+                raise ValueError('Argument cannot be a symmetric matrix field.')
             return f[:, :, :, 0] + f[:, :, :, 2]
         if n == 5:
             if f.shape[-1] != 6:
-                raise ValueError(
-                    'Argument cannot be a symmetric matrix field.')
+                raise ValueError('Argument cannot be a symmetric matrix field.')
             return f[:, :, :, :, 0] + f[:, :, :, :, 3] + f[:, :, :, :, 5]
-
 
 def laplacian_of_gaussian(f, sigma, vectorial=False, vectorial_first=False, reflected=True, marginalize=False):
     """
     Laplacian of Gaussian.
+    
+    :param f: Array of dim 1, 2, 3, or 4. Dim 1 is always scalar while dim 4 is always vectorial.
+    :param sigma: Gaussian scale for evaluation of derivatives. If float array-like, its length
+                  must match f (non-vectorial) dimensions. This would be typically used to accommodate
+                  non-square (resp. cubic) pixels (resp. voxels).
+    :param vectorial: True means that the data is vectorial. The last dimension if vectorial_first is False
+                      or the first one if vectorial_first is True.
+                      When f.ndim is in {1, 4}, this is ignored.
+    :param vectorial_first: True means first dim encodes the vectorial values,
+                            False means last dim encodes the vectorial values, whenever it makes sense.
+    :param reflected: If True, reflected boundary conditions will be applied.
+                      If False, standard periodic are used (needs non-vectorial dimensions to be even).
+    :param marginalize: If True and vectorial is True, returns Hessian per vectorial dimensions.
+                        If False, sum result over vectorial dimensions.
 
-    Arguments:
-    ----------
-    f : float numpy array
-        array of dim 1, 2, 3, or 4. dim 1 is always scalar while dim 4 is always vectorial.
-    sigma: float or array of floats-like
-        Gaussian scale for evaluation of derivatives. If float array-like, its length 
-        must match f (non-vectorial) dimensions. This would be typically used to accomodate
-        non square (resp. cubic) pixels (resp. voxels).
-    vectorial: bool
-        True means that the data is vectorial. The last dimension if vectorial_first is False
-        or the first one if vectorial_first is True
-        when f.ndim \in {1, 4} this is ignored.
-    vectorial_first: bool
-        True means first dim encodes the vectorial values,
-        False means last dim encodes the vectorial values, whenever it makes sense
-    reflected: bool
-        if True: reflected boundary conditions will be applied.
-        if False, standard periodic are used (needs non vectorial dimensions to be even)
-    marginalize: bool
-        if True and vectorial is True, that returns hessian per vectorial dimensions
-        if False, sum result over vectorial dimensions.
+    :returns: Laplacian of Gaussian array. If not marginalize and data array f is vectorial,
+              or if data array f is scalar, same dimensions as f.
+              If data array is vectorial and marginalize, the vectorial dimension disappears.
+    :rtype: numpy array
 
-    Returns:
-    --------
-    logf: numpy array
-        Laplacian of Gaussian array. If not marginalize and data array f is vectorial, 
-        or if data array f is scalar, same dimensions as f.
-        if data array is vectorial and maginalize, the vectorial dimension disappears.
-
-    Raises:
-    -------
-    ValueError, TypeError.
+    :raises ValueError: If dimensions are incorrect or mismatch.
+    :raises TypeError: If input types are incorrect.
     """
     if (f.ndim <= 0) or (f.ndim > 4):
-        raise TypeError(
-            'Only dim 1 to 3, with maybe vectorial content images can be used.')
-    n = f.ndim if vectorial else f.ndim-1
+        raise TypeError('Only dim 1 to 3, with maybe vectorial content images can be used.')
+    n = f.ndim if vectorial else f.ndim - 1
     if n == 0:
         raise ValueError('A dimension 1 array cannot be vectorial.')
     elif n == 4:
         raise ValueError('A dimension 4 array must be vectorial.')
 
-    ders = gaussian_scalespace(f, sigma, order=2*np.eye(n), vectorial=vectorial,
+    ders = gaussian_scalespace(f, sigma, order=2 * np.eye(n), vectorial=vectorial,
                                vectorial_first=vectorial_first, reflected=reflected)
     logf = reduce(add, ders)
     if marginalize and vectorial:
         axis = 0 if vectorial_first else -1
         np.sum(logf, axis=axis, out=logf)
     return logf
+    
 
-
-def mean_curvature_gaussian(f, sigma, eps=1e-8, reflected=True,):
+def mean_curvature_gaussian(f, sigma, reflected=True, eps=1e-8):
     """
     Compute mean curvature at scale sigma. f must be scalar
-    otherwise it is just parallel computations of curvature?
-      Arguments:
-    ----------
-    f : float numpy array
-        array of dim  2, 3, or 4. dim 1 is actually excluded while dim 4 is always vectorial.
-    sigma: float or array of floats-like
-        Gaussian scale for evaluation of derivatives. If float array-like, its length 
-        must match f (non-vectorial) dimensions. This would be typically used to accomodate
-        non square (resp. cubic) pixels (resp. voxels).
-    reflected: bool
-        if True: reflected boundary conditions will be applied.
-        if False, standard periodic are used (needs non vectorial dimensions to be even)
-    eps: float
-        regularization of denomator if necessary.
+    otherwise it is just parallel computations of curvature.
 
-    Returns:
-    --------
-    mcf: numpy array
-        mean curvature at gaussian scale of array f. Scalar valued, i.e., same dimensions as f
+    :param f: Array of dim 2, 3, or 4. Dim 1 is excluded while dim 4 is always vectorial.
+    :param sigma: Gaussian scale for evaluation of derivatives. If float array-like, its length
+                  must match f (non-vectorial) dimensions. This would be typically used to accommodate
+                  non-square (resp. cubic) pixels (resp. voxels).
+    :param reflected: If True, reflected boundary conditions will be applied.
+                      If False, standard periodic are used (needs non-vectorial dimensions to be even).
+    :param eps: Regularization of denominator if necessary.
 
-    Raises:
-    -------
-    ValueError, TypeError.
+    :returns: Mean curvature at Gaussian scale of array f. Scalar valued, i.e., same dimensions as f.
+    :rtype: numpy array
+
+    :raises ValueError: If dimensions are incorrect or mismatch.
+    :raises TypeError: If input types are incorrect.
     """
     if (f.ndim <= 1) or (f.ndim > 3):
         raise TypeError('Only dim2 and 3, scalar arrays are accepted.')
@@ -1225,18 +1006,17 @@ def mean_curvature_gaussian(f, sigma, eps=1e-8, reflected=True,):
     if f.ndim == 2:
         order = ((1, 0), (0, 1), (2, 0), (1, 1), (0, 2))
     else:
-        order = ((1, 0, 0), (0, 1, 0), (0, 0, 1), (2, 0, 0),
-                 (1, 1, 0), (1, 0, 1), (0, 2, 0), (0, 1, 1), (0, 0, 2))
+        order = ((1, 0, 0), (0, 1, 0), (0, 0, 1), (2, 0, 0), (1, 1, 0), (1, 0, 1), (0, 2, 0), (0, 1, 1), (0, 0, 2))
 
-    ders = gaussian_scalespace(
-        f, sigma, order=order, vectorial=False, reflected=reflected)
+    ders = gaussian_scalespace(f, sigma, order=order, vectorial=False, reflected=reflected)
     if f.ndim == 2:
         fx, fy, fxx, fxy, fyy = ders
-        mcf = (fx**2*fyy - 2*fx*fy*fxy + fy**2*fxx)/(fx**2 + fy**2 + eps)**1.5
+        mcf = (fx ** 2 * fyy - 2 * fx * fy * fxy + fy ** 2 * fxx) / (fx ** 2 + fy ** 2 + eps) ** 1.5
     else:
         fx, fy, fz, fxx, fxy, fxz, fyy, fyz, fzz = ders
-        mcf = (fx**2*(fyy + fzz) + fy**2*(fxx + fzz) + fz**2*(fxx + fyy) -
-               2*(fx*fy*fxy + fx*fz*fxz + fy*fz*fyz))/(fx**2 + fy**2 + fz**2 + eps)**1.5
+        mcf = (fx ** 2 * (fyy + fzz) + fy ** 2 * (fxx + fzz) + fz ** 2 * (fxx + fyy) - 2 * (
+                    fx * fy * fxy + fx * fz * fxz + fy * fz * fyz)) / \
+              (fx ** 2 + fy ** 2 + fz ** 2 + eps) ** 1.5
     return mcf
 
 
@@ -1245,6 +1025,7 @@ def mean_curvature_gaussian(f, sigma, eps=1e-8, reflected=True,):
 if __name__ == "__main__":
     import matplotlib.pyplot as plt
     import matplotlib.gridspec as gridspec
+    from math import (cos, sin)
 
     f = np.zeros((201, 201))
     f[100, 100] = 1.0
@@ -1256,7 +1037,7 @@ if __name__ == "__main__":
         f, sigma=sigma, order=orders)
 
     fig = plt.figure(constrained_layout=True)
-    fig.canvas.set_window_title('Gaussian pyramid')
+    fig.canvas.setWindowTitle('Gaussian pyramid')
     gs = fig.add_gridspec(nrows=8, ncols=8)
     ax00 = fig.add_subplot(gs[:2, 3:5])
     ax00.imshow(f00)
@@ -1304,7 +1085,7 @@ if __name__ == "__main__":
     fig, ax = plt.subplots(2,3)
     ax.shape = ax.size
     for i in range(N):
-        ax[i].imshow(fx * cos(2 * i * PI / N) + fy * sin(2 * i * PI / N))
+        ax[i].imshow(fx * cos(2 * i * _pi / N) + fy * sin(2 * i * _pi / N))
         ax[i].set_title(r'1st order, angle $\frac{%d\pi}{%d}$' % (2*i, N))
         ax[i].axis('off')
    
