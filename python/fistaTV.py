@@ -5,7 +5,7 @@ File: fistaTV
 
 Description: Implementation of TV denoising via Fast
 Iterative Shrinkage Thresholding Algorithm (FISTA)
-following Beck and Teboulle's paper.'
+following Beck and Teboulle's paper.
 
 Works in dimension 2 and 3
 
@@ -35,40 +35,42 @@ from tomo_utils import Shepp_Logan
 import random
 
 
-
-def Pc(x, xmin, xmax):
+def Pc(x: np.ndarray, xmin: float, xmax: float) -> None:
     """
-    Pc: simple box constraint projection
+    Simple box constraint projection, in place.
+
+    :param x: np.ndarray, array to project.
+    :param xmin: float, min value of x-entry.
+    :param xmax: float, max value of x-entry.
     """
     np.place(x, x < xmin, xmin)
     np.place(x, x > xmax, xmax)
-#
-#
-# def project_on_field_of_balls(psi, l=1.0):
-#     """
-#     project a vector field on the field of radius l balls,
-#     i.e. each vector v of the field is projected in a radius l ball. If
-#     |v| <= l, nothing to do, if |v| > l, normalise v so that its norm is
-#     actually l.
-#
-#     :param psi: numpy array.
-#         the vector field to be projected
-#     :param l: float. Then radius of each ball.
-#     :return: psi projected
-#     """
-#
-#     psishape = psi.shape
-#     vdim = psishape[-1]
-#     rdim = reduce(mul, psishape[:-1], 1)
-#     psi.shape = (rdim, vdim)
-#
-#     psinorm = np.sqrt(np.sum(psi ** 2, axis=1))
-#     psinorm = (psinorm / l) * (psinorm > l) + np.ones_like(psinorm) * (psinorm <= l)
-#     # np.place(psinorm, psinorm <= 1.0, 1.0)
-#     for i in range(vdim):
-#         psi[:, i] /= psinorm
-#     psi.shape = psishape
-#     return psi
+
+
+def project_on_field_of_balls(psi, l=1.0):
+    """
+    Project a vector field on the field of radius l balls.
+
+    This means that each vector v of the field is projected in a radius l ball. If
+    |v| <= l, nothing to do, if |v| > l, normalise v so that its norm is
+    actually l.
+
+    :param psi:  the vector field to be projected
+    :param l: float. Then radius of each ball.
+    :return: psi projected
+    """
+    psi_shape = psi.shape
+    vdim = psi_shape[-1]
+    rdim = reduce(mul, psi_shape[:-1], 1)
+    psi.shape = (rdim, vdim)
+
+    psi_norm = np.sqrt(np.sum(psi ** 2, axis=1))
+    psi_norm = (psi_norm / l) * (psi_norm > l) + np.ones_like(psi_norm) * (psi_norm <= l)
+    # np.place(psi_norm, psi_norm <= 1.0, 1.0)
+    for i in range(vdim):
+        psi[:, i] /= psi_norm
+    psi.shape = psi_shape
+    return psi
 
 
 def fistaTV(b, l, n, xmin=0.0, xmax=float("inf")):
