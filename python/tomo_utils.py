@@ -1,13 +1,9 @@
 # coding=utf-8
 """
-Project: Tomo
-File: tomo_tils.py
-
-Description:
+@project: SegmentReconstruct, from PyCT (SSVM 2017)
+@file: tomo_tils.py
+@description:
 A few utility routines for PyCT
-
-Author: François Lauze, University of Copenhagen
-Date: September 2015 - July 2016
 
 2022: removed some project very specific routines
 
@@ -18,10 +14,11 @@ import scipy.sparse as sp
 import scipy.sparse.linalg as spla
 import matplotlib.pyplot as plt
 
+__author__ = "François Lauze, University of Copenhagen"
+__date__ = "09-2015- 07-2016"
+__version__ = "0.1.0"
 
 # from matplotlib import cm
-
-
 def cosd(x):
     """
     Returns the cos of x in degrees.
@@ -93,7 +90,6 @@ def non_zero_rows(A, thres=1e-8):
 
 
 def remove_empty_rows_from_csr(A):
-    # type: scipy.sparse.csr_matrix -> (scipy.sparse.csr_matrix, numpy.ndarray)
     """
     remove empty rows of the matrix, creating a smaller one.
     :param A: compressed sparse rows matrix to be compressed (...)

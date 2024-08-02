@@ -1,10 +1,11 @@
 # -*- coding: utf-8 -*-
 """
-@Project: psychic-memory
-@File: test_reconstruction.py test_reconstruction
+@project: SegmentReconstruct
+@file: test_reconstruction.py test_reconstruction
+@description: test and debugging of some Damped ART modified.
 
-@Description: test and debugging of some Damped ART modified.
 
+François Lauze, Chrysoula Stathaki
 """
 import random
 import numpy as np

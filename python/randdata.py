@@ -1,20 +1,22 @@
 # -*- coding: utf-8 -*-
 """
-Project: PyCT
-
-File: randdata.py
-Description k-phases random data generated via random disks
+@project:  SegmentReconstruct, from PyCT (SSVM 2017)
+@file: randdata.py
+@description k-phases random data generated via random disks
 
 Author: François Lauze, University of Copenhagen
 Date: October 2016
 """
-
 
 import os
 import os.path
 import numpy as np
 import matplotlib.pyplot as plt
 from matplotlib import cm
+
+__author__ = "François Lauze, University of Copenhagen"
+__date__ = "10-2016"
+__version__ = "0.0.1"
 
 
 def random_image(image_size, number_of_disks, grey_levels_distribution, bg=0.0, grey_levels=None,

@@ -1,12 +1,14 @@
 # -*- coding: utf-8 -*-
 """
-@Project: psychic-memory
-@File: segmentation_counts.py
+@project: SegmentReconstruct
+@file: segmentation_counts.py
 
-@Description: Extract connected components of a binary image.
+@description: Extract connected components of a binary image.
 filter the components per size. Return list of components, with list of
 corresponding pixel indices.
 
+
+François Lauze, Chrysoula Stathaki
 """
 
 import numpy as np

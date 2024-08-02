@@ -32,18 +32,18 @@ x8 in 3D).
 * Added 08-2016: possibility that the vectorial dimension is first. This in
   accordance with some DWI nifti data.
 
-* Added 09-2017: anisotropic smoothing in x, y, z. This is in order to be able to 
+* Added 09-2017: anisotropic smoothing in x, y, z. This is in order to be able to
   deal with non square pixels / cube voxels, especially with some nifty DWI files.
 
-* Added 09-2017: structure tensor, Hessian of Gaussian, Laplacian of Gaussiam, 
+* Added 09-2017: structure tensor, Hessian of Gaussian, Laplacian of Gaussiam,
   mean curvature at Gaussian scale.
 
 * Added 10-2017: determinant and trace of symmetric matrix fields.
 
 * Added 10-2017: support for float32 numpy arrays.
 
-* Modified 10-2017 and November 2019: fft supports now pyfftw for best performances, with 
-  code running for float32 and float dtypes. If it cannot find the pyfftw module, it falls 
+* Modified 10-2017 and November 2019: fft supports now pyfftw for best performances, with
+  code running for float32 and float dtypes. If it cannot find the pyfftw module, it falls
   back to numpy fft.
 
 * Modified 11-2018: used // instead of / for series of integer division, make it Python3
@@ -55,7 +55,7 @@ x8 in 3D).
 
 * Need some tests for mean curvature, hessian...
 
-copyright 2014-2021 François Lauze, University of Copenhagen
+copyright 2014-2024 François Lauze, University of Copenhagen
 
 This program is free software: you can redistribute it and/or modify
 it under the terms of the GNU General Public License as published by
@@ -72,6 +72,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 """
 
+
 from operator import add
 import numpy as np
 from numpy import inf as Inf
@@ -80,18 +81,27 @@ from functools import reduce
 from numbers import Number
 from typing import Union, Tuple, List, Iterable
 
+__author__ = "François Lauze, university of Copenhagen"
+__date__ = "Date: 2014-2024."
+__version__ = '1.57.0796'
+
+
+
 # Set to FFT to 'pyfftw' to use pyfftw if possible, else numpy
 # set FFT to '' does the same as 'pyfftw'
 # set FFT to 'numpy' or anything not '' or 'pyfftw' to use numpy
-FFT = "numpy"   # Right now, pyfftw is not working properly, so I set it to numpy
+FFT = "numpy"  # Right now, pyfftw is not working properly, so I set it to numpy
 if FFT in ['pyfftw', '']:
     try:
         import pyfftw
+
         pyfftw.interfaces.cache.enable()
         FFT_THREADS = cpu_count()  # - there is a bug in pyfftw, so I set it to 1?
 
-        def fftn (data: np.ndarray):
+
+        def fftn(data: np.ndarray):
             return pyfftw.interfaces.numpy_fft.fftn(data, threads=FFT_THREADS)
+
 
         def ifftn(data: np.ndarray):
             return pyfftw.interfaces.numpy_fft.ifftn(data, threads=FFT_THREADS)
@@ -103,10 +113,9 @@ else:
     fftn = np.fft.fftn
     ifftn = np.fft.ifftn
 
-
 __author = "François Lauze, university of Copenhagen"
 __date__ = "Date: 2014-2024."
-__version = '1.57.0796' # pi/2
+__version = '1.57.0796'  # pi/2
 
 # Pi and sqrt(-1)
 _pi = np.pi
@@ -134,7 +143,6 @@ def gss_fft(f, vectorial):
     return ff
 
 
-
 def gss_ifft(f, vectorial):
     """
     Compute Inverse Fourier Transform of f using fftw3 or numpy
@@ -157,20 +165,19 @@ def gss_ifft(f, vectorial):
     return ff.real
 
 
-
 def _to_float_array(s, n, dtype=float, argname1='sigma', argname2='dim'):
     """
     Attempt at converting s to a (numpy) array of length n
     If s turns to be a scalar, just makes an array with repeating values of s n times.
     If s is not scalar, it should already be array like with len n.
-    
+
     :param s : Iterable to be converted to a float array
     :param n: positive integer, coding the length of the array
     :returns: np.ndarray, float array of length n
     :raise: TypeError if s is not convertible to a numpy array or if s is not iterable, ValueError if len(s) != n
     """
     try:
-        s = np.array([float(s)]*n, dtype=dtype)
+        s = np.array([float(s)] * n, dtype=dtype)
     except:
         try:
             s = np.array(s, dtype=dtype)
@@ -277,7 +284,6 @@ def derivative_filter_fourier(dim, order, dtype=float):
     return D
 
 
-
 def gaussian_filter_fourier_dim1(m, sigma, dtype=float):
     """
     Create a 1D Gaussian filter in the Fourier domain, size 2m.
@@ -340,7 +346,7 @@ def gaussian_filter_fourier(dim, sigma, dtype=float):
         G1.shape = (1, G1.size, 1)
         G2.shape = (1, 1, G2.size)
         return np.kron(np.kron(G0, G1), G2)
-        
+
 
 def gss_remove_symmetry(f, vectorial):
     """
@@ -479,7 +485,7 @@ def gaussian_scalespace(f, sigma, order=None, vectorial=False, vectorial_first=F
         # as non-zero. Mysterious bug in this expression?
         # works properly inside a standard ipython:
         # if any(dim[i] % 2  for i in range(len(dim))):
-        # 
+        #
         # Will it fix it?
         odd_dim = [dim[i] % 2 for i in range(len(dim))]
         if any(odd_dim):
@@ -611,7 +617,7 @@ def Fourier_gaussian_scalespace(f, sigma, order=None, vectorial=False):
 
 def structure_tensor(f, inner_scale, outer_scale, vectorial=False, vectorial_first=False, reflected=True):
     """
-    This is an illustration of the use of Gaussian Scale-space to 
+    This is an illustration of the use of Gaussian Scale-space to
     compute classical structure tensor of an image/volume.
     As is of usage, the structure tensor of a vectorial image is
     obtained by summing the tensors of each scalar field.
@@ -680,11 +686,10 @@ def structure_tensor(f, inner_scale, outer_scale, vectorial=False, vectorial_fir
     return st
 
 
-
 def hessian_of_gaussian(f, sigma, vectorial=False, vectorial_first=False, reflected=True, marginalize=False):
     """
-    Hessian of Gaussian for a signal, image, or volume. 
-    
+    Hessian of Gaussian for a signal, image, or volume.
+
     :param f: Array of dim 1, 2, 3, or 4. Dim 1 is always scalar while dim 4 is always vectorial.
     :param sigma: Gaussian scale for evaluation of derivatives. If float array-like, its length
                   must match f (non-vectorial) dimensions. This would be typically used to
@@ -795,6 +800,7 @@ def hessian_of_gaussian(f, sigma, vectorial=False, vectorial_first=False, reflec
 
     return hf
 
+
 def determinant_symmetric_field(f, vectorial=False, vectorial_first=False):
     """
     `determinant_symmetric_field` is not using Gaussian scale space but is supposed to be
@@ -865,10 +871,11 @@ def determinant_symmetric_field(f, vectorial=False, vectorial_first=False):
             if f.shape[-1] != 6:
                 raise ValueError('Argument cannot be a symmetric matrix field.')
             return f[:, :, :, :, 0] * f[:, :, :, :, 3] * f[:, :, :, :, 5] + \
-                2 * f[:, :, :, :, 1] * f[:, :, :, :, 2] * f[:, :, :, :,4] - \
+                2 * f[:, :, :, :, 1] * f[:, :, :, :, 2] * f[:, :, :, :, 4] - \
                 f[:, :, :, :, 1] ** 2 * f[:, :, :, :, 5] - \
                 f[:, :, :, :, 2] ** 2 * f[:, :, :, :, 3] - \
                 f[:, :, :, :, 4] ** 2 * f[:, :, :, :, 0]
+
 
 def trace_symmetric_field(f, vectorial=False, vectorial_first=False):
     """
@@ -937,10 +944,11 @@ def trace_symmetric_field(f, vectorial=False, vectorial_first=False):
                 raise ValueError('Argument cannot be a symmetric matrix field.')
             return f[:, :, :, :, 0] + f[:, :, :, :, 3] + f[:, :, :, :, 5]
 
+
 def laplacian_of_gaussian(f, sigma, vectorial=False, vectorial_first=False, reflected=True, marginalize=False):
     """
     Laplacian of Gaussian.
-    
+
     :param f: Array of dim 1, 2, 3, or 4. Dim 1 is always scalar while dim 4 is always vectorial.
     :param sigma: Gaussian scale for evaluation of derivatives. If float array-like, its length
                   must match f (non-vectorial) dimensions. This would be typically used to accommodate
@@ -978,7 +986,7 @@ def laplacian_of_gaussian(f, sigma, vectorial=False, vectorial_first=False, refl
         axis = 0 if vectorial_first else -1
         np.sum(logf, axis=axis, out=logf)
     return logf
-    
+
 
 def mean_curvature_gaussian(f, sigma, reflected=True, eps=1e-8):
     """
@@ -1015,7 +1023,7 @@ def mean_curvature_gaussian(f, sigma, reflected=True, eps=1e-8):
     else:
         fx, fy, fz, fxx, fxy, fxz, fyy, fyz, fzz = ders
         mcf = (fx ** 2 * (fyy + fzz) + fy ** 2 * (fxx + fzz) + fz ** 2 * (fxx + fyy) - 2 * (
-                    fx * fy * fxy + fx * fz * fxz + fy * fz * fyz)) / \
+                fx * fy * fxy + fx * fz * fxz + fy * fz * fyz)) / \
               (fx ** 2 + fy ** 2 + fz ** 2 + eps) ** 1.5
     return mcf
 
@@ -1076,19 +1084,15 @@ if __name__ == "__main__":
     for ax in [ax00, ax10, ax01, ax20, ax11, ax02, ax30, ax21, ax12, ax03]:
         ax.axis('off')
 
-
-
-    orders = [[1,0],[0,1]]
+    orders = [[1, 0], [0, 1]]
     N = 6
-    fx, fy = gaussian_scalespace(f, sigma=sigma/3.0, order=orders)
+    fx, fy = gaussian_scalespace(f, sigma=sigma / 3.0, order=orders)
     I = np.zeros_like(f)
-    fig, ax = plt.subplots(2,3)
+    fig, ax = plt.subplots(2, 3)
     ax.shape = ax.size
     for i in range(N):
         ax[i].imshow(fx * cos(2 * i * _pi / N) + fy * sin(2 * i * _pi / N))
-        ax[i].set_title(r'1st order, angle $\frac{%d\pi}{%d}$' % (2*i, N))
+        ax[i].set_title(r'1st order, angle $\frac{%d\pi}{%d}$' % (2 * i, N))
         ax[i].axis('off')
-   
-
 
     plt.show()

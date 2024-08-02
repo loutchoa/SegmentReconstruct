@@ -1,27 +1,21 @@
 """
-@project: psychic-memory
+@project: SegmentReconstruct
     
 @file: irregular_domain.py
     
 @description: routines for discrete gradient and divergences 
 of functions on an irregular domain embedded in a regular grid.
-    
-@author: François Lauze, University of Copenhagen    
-Created on Thurs Jan 20 16:48 2022
 
-@TODO:
-  + some FISTA-TV algorithms, or in a depending module
-  + some in-place routines used in Chambolle-Pock (add-ascent_grad,
-    add_descent_div...) and friends?
+François Lauze, Chrysoula Stathaki
 """
 
 import numpy as np
+# from matplotlib import pyplot as plt
+# from icecream import ic
 
-from matplotlib import pyplot as plt
-from icecream import ic
-
+__author__ =  "François Lauze, University of Copenhagen"
+__date__ = "01-20-2022"
 __version__ = "0.0.1"
-__author__ = "François Lauze"
 
 
 class Stencil2D:

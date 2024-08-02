@@ -1,16 +1,14 @@
 # coding=utf-8
 """
-Project: PyCT
-File: fistaTV
+@project: SegmentReconstruct (from PyCT - SSVM 2017)
+@file: fistaTV
 
-Description: Implementation of TV denoising via Fast
+@description: Implementation of TV denoising via Fast
 Iterative Shrinkage Thresholding Algorithm (FISTA)
 following Beck and Teboulle's paper.
 
 Works in dimension 2 and 3
 
-Author: François Lauze, University of Copenhagen
-Date: 08-2016
 Small stuffs: cleaning of the code and Python, August 2021
 """
 
@@ -33,6 +31,10 @@ from skimage import data
 from sklearn.cluster import KMeans
 from tomo_utils import Shepp_Logan
 import random
+
+__author__ = "François Lauze, University of Copenhagen"
+__date__ = "08-2016"
+__version__ = "0.1.0"
 
 
 def Pc(x: np.ndarray, xmin: float, xmax: float) -> None:

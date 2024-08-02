@@ -1,9 +1,9 @@
 # -*- coding: utf-8 -*-
 """
-Project: PyCT
-File: qregvfield.py
+@project: SegmentReconstruct, from PyCT (SSVM 2017)
+@file: qregvfield.py
 
-Description: A proximal solver for minimization of 
+@description: A proximal solver for minimization of
           E(v) = \lambda g.v + ||Dv||_2^2, 
           v \in Sigma
 where v is vector valued and Sigma is the convex product of
@@ -14,9 +14,6 @@ my image domain. D is a discrete gradient operator, and D^TD is
 a discrete negative Laplacian. Boundary conditions on the domain
 are standard Neumann.
 
-
-Author: François Lauze, University of Copenhagen
-Date: September 2016
 """
 
 import numpy as np
@@ -24,6 +21,10 @@ import matplotlib.pyplot as plt
 import matplotlib.cm as cm
 from skimage import data
 
+
+__author__ = "François Lauze, University of Copenhagen"
+__date__ = "09-18-2016"
+__version__ = "0.0.1"
 
 
 def build_basic_stencil(domain):
@@ -74,7 +75,8 @@ def build_basic_stencil(domain):
             
         stencil[i] = (px, py, neighbors, coef)
     return stencil
-        
+
+
     
 def qregv(stencil, v, t, g, sor=1.0, max_iterations=100):
     """
@@ -125,16 +127,6 @@ def qregv(stencil, v, t, g, sor=1.0, max_iterations=100):
             update = numerator/(coef + s)
             u[px, py] = (1-sor)*u[px, py] + sor*update
     return u
-   
-
-
-
-
-
-
-
-
-
 
 
 if __name__ == "__main__":

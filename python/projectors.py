@@ -1,24 +1,19 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-@project: CodeFromFrancois
-    
+@project: CodeFromFrancois - SegmentReconstruct
 @filename: projectors.py
     
 @description: A module containing some projections and proximals
-
-@author: François Lauze, University of Copenhagen    
-Created on Fri Nov 26 17:14:15 2021
-
-
-TODO: some could run with a jit numba multicore....?
+This is a pure Python reimplementation of my old C++ code.
 """
 from functools import reduce
 from operator import mul
 import numpy as np
 
+__author__ = "François Lauze, University of Copenhagen"
+__date__ = "2021-11-26"
 __version__ = "0.0.1"
-__author__ = "François Lauze"
 
 
 def product_dimensions(a):

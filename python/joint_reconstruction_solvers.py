@@ -1,8 +1,7 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-@project: psychic-memory
-    
+@project: SegmentReconstruct
 @filename: joint_reconstruction_solvers.py
     
 @description: a ART with FISTA for a reconstruction part with
@@ -19,8 +18,7 @@ I also provide a proximal step for the segmentation. The difficulty with it is
 that in case of a ROI, discrete gradient and divergences need to be provided that
 account for the behaviour at boundary.
 
-@author: François Lauze, University of Copenhagen    
-Created on Mon Jan 17 19:07:41 2022
+François Lauze, Chrysoula Stathaki
 
 """
 from random import shuffle
@@ -43,10 +41,9 @@ from irregular_domain import (
 from projectors import project_on_simplex_field
 
 
-
-
+__author__ = "François Lauze, University of Copenhagen"
+__date__ = "01-17-2022"
 __version__ = "0.0.1"
-__author__ = "François Lauze"
 
 
 # With ideas from "kaczmarz algorithms" GitHub repos

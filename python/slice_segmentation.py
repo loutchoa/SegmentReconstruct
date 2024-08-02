@@ -1,12 +1,13 @@
 # -*- coding: utf-8 -*-
 """
-@Project:
-@File: slice_segmentation.py
-
-@Description: An example of segmentation of a slice using
+@project: SegmentReconstruct
+@file: slice_segmentation.py
+@description: An example of segmentation of a slice using
 an 'extended' FISTA model.
 
+François Lauze, Chrysoula Stathaki
 """
+
 import warnings
 import numpy as np
 import matplotlib.pyplot as plt

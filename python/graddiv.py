@@ -3,20 +3,16 @@
 @file: graddiv.py
 @brief discrete gradients and divergences for segmentation algorithms
 
-Implements a series of discrete gradients and divergences,
-using forward differences for the gradient, with Neumann-like
-boundary conditions at the "forward" sides, and implements
-corresponding divergences, i.e. discrete divergences satisfying
-the adjunction property:
+Implements a series of discrete gradients and divergences, using forward differences for the gradient,
+with Neumann-like boundary conditions at the "forward" sides, and implements corresponding divergences, i.e.
+discrete divergences satisfying the adjunction property:
     div* = -adj(grad*) 
 
-
-@author: Francois Lauze, University of Copenhagen
-@date: Wed Sep 10 16:02:53 2014
-
-TODO: Cython/OpenMP implementation or from teh C++ 
-code?
 """
+
+__author__ = "François Lauze, University of Copenhagen"
+__date__ = "09-10-2014"
+__version__ = "0.1.0"
 
 # replace by bohrium when ready
 import numpy as np

@@ -2,7 +2,6 @@
 # -*- coding: utf-8 -*-
 """
 @project: Segmentation
-    
 @filename: label_simplex_fields.py
     
 @description:
@@ -13,19 +12,15 @@
 
 This is a pure Python reimplementation of my old C++ code.
 This should be moved into some simplex/segmentation package
-
-@author: François Lauze, University of Copenhagen    
-Created on Tue Nov 16 14:16:12 2021
-
 """
 
 from functools import reduce
 from operator import mul
 import numpy as np
 
-
+__author__ = "François Lauze, University of Copenhagen"
+__date__ = "2021-11-16"
 __version__ = "0.0.1"
-__author__ = "François Lauze"
 
 
 def label_to_simplex_field(u, dtype='float32'):
